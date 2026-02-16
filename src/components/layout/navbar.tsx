@@ -20,7 +20,6 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 export async function Navbar() {
   const session = await auth();
   const user = session?.user;
-  // @ts-expect-error - role is added by our schema extension
   const isAdmin = user?.role === "admin";
 
   return (

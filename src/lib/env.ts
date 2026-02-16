@@ -16,6 +16,7 @@ export const env = createEnv({
     TICKETMASTER_API_KEY: z.string().optional(),
     SEATGEEK_CLIENT_ID: z.string().optional(),
     GOOGLE_PLACES_API_KEY: z.string().optional(),
+    CRON_SECRET: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1),
@@ -37,6 +38,7 @@ export const env = createEnv({
     TICKETMASTER_API_KEY: process.env.TICKETMASTER_API_KEY,
     SEATGEEK_CLIENT_ID: process.env.SEATGEEK_CLIENT_ID,
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
+    CRON_SECRET: process.env.CRON_SECRET,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_DEFAULT_LAT: process.env.NEXT_PUBLIC_DEFAULT_LAT,
     NEXT_PUBLIC_DEFAULT_LNG: process.env.NEXT_PUBLIC_DEFAULT_LNG,

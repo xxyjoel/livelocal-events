@@ -1,16 +1,22 @@
+import Link from "next/link";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { StatsCards } from "@/components/admin/stats-cards";
+import { CalendarIcon, InboxIcon, ArrowRightIcon } from "lucide-react";
 
-const stats = [
-  { title: "Total Events", value: "0", description: "Active events on platform" },
-  { title: "Total Venues", value: "0", description: "Registered venues" },
-  { title: "Pending Submissions", value: "0", description: "Awaiting review" },
-  { title: "Tickets Sold", value: "0", description: "All time" },
-];
+// Placeholder stats — will be replaced with real data from queries later
+const placeholderStats = {
+  totalEvents: 42,
+  totalVenues: 15,
+  pendingSubmissions: 3,
+  ticketsSold: 1284,
+};
 
 export default async function AdminDashboardPage() {
   return (
@@ -20,22 +26,56 @@ export default async function AdminDashboardPage() {
         Overview of your platform activity.
       </p>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{stat.value}</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {stat.description}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="mt-8">
+        <StatsCards stats={placeholderStats} />
+      </div>
+
+      <Separator className="my-8" />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Recent Events */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="size-4 text-muted-foreground" />
+              <CardTitle className="text-base">Recent Events</CardTitle>
+            </div>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/admin/events">
+                View all
+                <ArrowRightIcon className="size-3" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+              No recent events to display. Create your first event to get
+              started.
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Submissions */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <InboxIcon className="size-4 text-muted-foreground" />
+              <CardTitle className="text-base">Recent Submissions</CardTitle>
+            </div>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/admin/submissions">
+                View all
+                <ArrowRightIcon className="size-3" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+              No pending submissions. Community submissions will appear here
+              for review.
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

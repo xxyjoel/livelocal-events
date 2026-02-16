@@ -1,0 +1,94 @@
+import Link from "next/link";
+import Image from "next/image";
+import { Badge } from "@/components/ui/badge";
+import { formatEventDate } from "@/lib/utils";
+import { Calendar, MapPin } from "lucide-react";
+import { type EventCardEvent } from "./event-card";
+
+interface FeaturedCarouselProps {
+  events: EventCardEvent[];
+}
+
+export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
+  if (events.length === 0) return null;
+
+  return (
+    <div
+      className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory"
+      role="region"
+      aria-label="Featured events"
+    >
+      {events.map((event) => {
+        const imageSrc = event.imageUrl || event.thumbnailUrl;
+        const venueLocation = [event.venue.city, event.venue.state]
+          .filter(Boolean)
+          .join(", ");
+
+        return (
+          <Link
+            key={event.id}
+            href={`/events/${event.slug}`}
+            className="group block shrink-0 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl w-full sm:w-[calc(100%-2rem)] md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.75rem)]"
+            aria-label={`Featured: ${event.title} at ${event.venue.name}`}
+          >
+            <div className="relative aspect-[16/7] sm:aspect-[16/8] overflow-hidden rounded-xl">
+              {/* Background Image */}
+              {imageSrc ? (
+                <Image
+                  src={imageSrc}
+                  alt={event.title}
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  priority
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-primary/20 to-secondary">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-6xl" role="img" aria-label={event.category.name}>
+                      {event.category.icon || "🎶"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Gradient Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+
+              {/* Category Badge */}
+              <div className="absolute top-3 left-3">
+                <Badge variant="secondary" className="bg-white/20 backdrop-blur-md text-white border-white/20">
+                  <span aria-hidden="true">{event.category.icon}</span>
+                  {event.category.name}
+                </Badge>
+              </div>
+
+              {/* Content Overlay */}
+              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
+                <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-white leading-tight line-clamp-2 group-hover:underline decoration-2 underline-offset-2">
+                  {event.title}
+                </h3>
+
+                <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex items-center gap-1.5 text-sm text-white/90">
+                    <Calendar className="size-3.5 shrink-0" aria-hidden="true" />
+                    <time dateTime={event.startDate.toISOString()}>
+                      {formatEventDate(event.startDate)}
+                    </time>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-sm text-white/90">
+                    <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">
+                      {event.venue.name}
+                      {venueLocation && ` \u00B7 ${venueLocation}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}

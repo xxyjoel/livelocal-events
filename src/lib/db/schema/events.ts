@@ -13,6 +13,7 @@ import {
 import { venues } from "./venues";
 import { categories } from "./categories";
 import { users } from "./users";
+import { eventArtists } from "./artists";
 
 export const eventStatusEnum = pgEnum("event_status", [
   "draft",
@@ -105,4 +106,5 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     references: [users.id],
     relationName: "submittedEvents",
   }),
+  eventArtists: many(eventArtists),
 }));

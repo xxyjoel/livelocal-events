@@ -2,10 +2,12 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import { EventForm } from "@/components/admin/event-form";
+import { TicketTypesManager } from "@/components/admin/ticket-types-manager";
 import { updateEventAction } from "@/lib/actions/events";
 import { getEventById } from "@/lib/db/queries/events";
 import { getVenuesForSelect } from "@/lib/db/queries/venues";
 import { getCategoriesForSelect } from "@/lib/db/queries/categories";
+import { getTicketTypesByEvent } from "@/lib/db/queries/tickets";
 
 export default async function EditEventPage({
   params,
@@ -14,10 +16,11 @@ export default async function EditEventPage({
 }) {
   const { eventId } = await params;
 
-  const [event, venues, categories] = await Promise.all([
+  const [event, venues, categories, ticketTypes] = await Promise.all([
     getEventById(eventId),
     getVenuesForSelect(),
     getCategoriesForSelect(),
+    getTicketTypesByEvent(eventId),
   ]);
 
   if (!event) {
@@ -54,6 +57,10 @@ export default async function EditEventPage({
           }}
           action={boundUpdateAction}
         />
+      </section>
+
+      <section className="mt-8 rounded-xl border p-6">
+        <TicketTypesManager eventId={eventId} ticketTypes={ticketTypes} />
       </section>
     </div>
   );

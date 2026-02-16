@@ -1,3 +1,14 @@
+export const dynamic = "force-dynamic";
+
+import { notFound, redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { getEventById } from "@/lib/db/queries/events";
+import { getTicketTypesByEvent } from "@/lib/db/queries/tickets";
+import { formatEventDate } from "@/lib/utils";
+import { CheckoutClient } from "@/components/checkout/checkout-client";
+import { Badge } from "@/components/ui/badge";
+import { CalendarIcon, MapPinIcon } from "lucide-react";
+
 export default async function CheckoutPage({
   params,
 }: {
@@ -5,48 +16,56 @@ export default async function CheckoutPage({
 }) {
   const { eventId } = await params;
 
+  // Auth check: redirect to sign-in if not logged in
+  const session = await auth();
+  if (!session?.user) {
+    redirect(`/sign-in?callbackUrl=/checkout/${eventId}`);
+  }
+
+  // Fetch event and ticket types
+  const [event, ticketTypes] = await Promise.all([
+    getEventById(eventId),
+    getTicketTypesByEvent(eventId),
+  ]);
+
+  if (!event) {
+    notFound();
+  }
+
+  // Affiliate events use external checkout
+  if (event.externalUrl) {
+    redirect(event.externalUrl);
+  }
+
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
-      <h1 className="text-4xl font-bold tracking-tight">Checkout</h1>
-      <p className="mt-2 text-muted-foreground">
-        Completing purchase for event:{" "}
-        <span className="font-mono font-medium text-foreground">{eventId}</span>
-      </p>
-
-      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
-        {/* Ticket Selection */}
-        <section className="rounded-xl border p-6">
-          <h2 className="text-xl font-semibold">Ticket Selection</h2>
-          <div className="mt-4 space-y-4">
-            {["General Admission", "VIP"].map((type) => (
-              <div
-                key={type}
-                className="flex items-center justify-between rounded-lg border p-4"
-              >
-                <div>
-                  <p className="font-medium">{type}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Price placeholder
-                  </p>
-                </div>
-                <div className="h-8 w-24 rounded-md border bg-muted/50" />
-              </div>
-            ))}
+    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+      {/* Event Summary */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">{event.title}</h1>
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <CalendarIcon className="size-4" />
+            <span>{formatEventDate(event.startDate)}</span>
           </div>
-        </section>
-
-        {/* Payment Section */}
-        <section className="rounded-xl border p-6">
-          <h2 className="text-xl font-semibold">Payment</h2>
-          <div className="mt-4 space-y-4 text-muted-foreground">
-            <p>Payment form placeholder</p>
-            <p>Stripe integration will go here</p>
-            <div className="h-10 w-full rounded-md border bg-muted/50" />
-            <div className="h-10 w-full rounded-md border bg-muted/50" />
-          </div>
-          <div className="mt-6 h-10 w-full rounded-md bg-primary" />
-        </section>
+          {event.venue && (
+            <div className="flex items-center gap-1.5">
+              <MapPinIcon className="size-4" />
+              <span>{event.venue.name}</span>
+            </div>
+          )}
+          {event.isFree && <Badge variant="secondary">Free Event</Badge>}
+        </div>
       </div>
+
+      {ticketTypes.length === 0 ? (
+        <div className="rounded-xl border p-8 text-center">
+          <p className="text-muted-foreground">
+            No tickets are available for this event at this time.
+          </p>
+        </div>
+      ) : (
+        <CheckoutClient eventId={eventId} ticketTypes={ticketTypes} />
+      )}
     </div>
   );
 }

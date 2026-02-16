@@ -25,14 +25,14 @@ export default async function AdminVenuesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Manage Venues</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Manage Venues</h1>
           <p className="mt-2 text-muted-foreground">
             Create, edit, and manage venues on the platform.
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/admin/venues/new">
             <PlusIcon className="size-4" />
             New Venue
@@ -60,7 +60,7 @@ export default async function AdminVenuesPage() {
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border">
+          <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
                 <TableRow>

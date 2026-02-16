@@ -48,7 +48,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
           <SheetClose asChild>
             <Link
               href="/"
-              className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+              className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
             >
               Home
             </Link>
@@ -56,7 +56,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
           <SheetClose asChild>
             <Link
               href="/"
-              className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+              className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
             >
               Discover
             </Link>
@@ -64,7 +64,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
           <SheetClose asChild>
             <Link
               href="/search"
-              className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+              className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
             >
               Search
             </Link>
@@ -75,7 +75,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
               <SheetClose asChild>
                 <Link
                   href="/profile"
-                  className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                  className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
                 >
                   Profile
                 </Link>
@@ -83,7 +83,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
               <SheetClose asChild>
                 <Link
                   href="/profile/tickets"
-                  className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                  className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
                 >
                   My Tickets
                 </Link>
@@ -92,7 +92,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
                 <SheetClose asChild>
                   <Link
                     href="/admin"
-                    className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                    className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
                   >
                     Admin
                   </Link>
@@ -102,7 +102,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
               <SheetClose asChild>
                 <Link
                   href="/api/auth/signout"
-                  className="rounded-md px-3 py-2 text-sm font-medium text-destructive hover:bg-accent"
+                  className="rounded-md px-3 py-3 text-sm font-medium text-destructive hover:bg-accent min-h-11"
                 >
                   Sign Out
                 </Link>
@@ -112,7 +112,7 @@ export function MobileNav({ isAuthenticated, isAdmin }: MobileNavProps) {
             <SheetClose asChild>
               <Link
                 href="/api/auth/signin"
-                className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                className="rounded-md px-3 py-3 text-sm font-medium hover:bg-accent min-h-11"
               >
                 Sign In
               </Link>

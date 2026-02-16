@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from "react";
 
+/**
+ * Debounce a value by the specified delay in milliseconds.
+ * Returns the debounced value that only updates after `delay` ms of inactivity.
+ */
 export function useDebounce<T>(value: T, delay: number = 500): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 

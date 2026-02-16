@@ -111,7 +111,7 @@ export function TicketSelector({
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="size-8"
+                  className="size-11"
                   onClick={() => handleQuantityChange(ticketType.id, -1)}
                   disabled={currentQty === 0}
                 >
@@ -124,7 +124,7 @@ export function TicketSelector({
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="size-8"
+                  className="size-11"
                   onClick={() => handleQuantityChange(ticketType.id, 1)}
                   disabled={
                     currentQty >= ticketType.maxPerOrder ||

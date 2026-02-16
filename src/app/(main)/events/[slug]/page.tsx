@@ -177,6 +177,44 @@ export default async function EventDetailPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
+      {/* Mobile sticky ticket CTA */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background p-4 lg:hidden">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p
+              className={`text-lg font-bold ${
+                event.isFree ? "text-green-600 dark:text-green-400" : ""
+              }`}
+            >
+              {getPriceDisplay(event)}
+            </p>
+          </div>
+          {event.externalUrl ? (
+            <Button asChild size="lg" className="min-h-12 flex-1">
+              <a
+                href={event.externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="size-4" />
+                Get Tickets
+              </a>
+            </Button>
+          ) : event.isFree ? (
+            <Button size="lg" variant="secondary" className="min-h-12 flex-1">
+              <Users className="size-4" />
+              RSVP
+            </Button>
+          ) : event.ticketTypes.length > 0 ? (
+            <Button asChild size="lg" className="min-h-12 flex-1">
+              <Link href={`/checkout/${event.id}`}>
+                Buy Tickets
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       {/* Hero Section */}
       <section className="relative h-64 w-full overflow-hidden sm:h-80 md:h-96">
         {event.imageUrl ? (
@@ -228,7 +266,7 @@ export default async function EventDetailPage({
       </section>
 
       {/* Main Content */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 pb-24 sm:px-6 lg:px-8 lg:pb-8">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* Left Column - Event Details */}
           <div className="space-y-8 lg:col-span-2">

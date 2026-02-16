@@ -73,20 +73,43 @@ export function OrderSummary({ items, isPending }: OrderSummaryProps) {
         </>
       )}
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={totalQuantity === 0 || isPending}
-      >
-        {isPending ? (
-          <Loader2Icon className="size-4 animate-spin" />
-        ) : (
-          <ShoppingCartIcon className="size-4" />
-        )}
-        {totalQuantity === 0
-          ? "Select Tickets"
-          : `Proceed to Payment — ${formatPrice(total)}`}
-      </Button>
+      {/* Desktop: inline button, Mobile: sticky bottom bar */}
+      <div className="hidden lg:block">
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          disabled={totalQuantity === 0 || isPending}
+        >
+          {isPending ? (
+            <Loader2Icon className="size-4 animate-spin" />
+          ) : (
+            <ShoppingCartIcon className="size-4" />
+          )}
+          {totalQuantity === 0
+            ? "Select Tickets"
+            : `Proceed to Payment — ${formatPrice(total)}`}
+        </Button>
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background p-4 lg:hidden">
+        <Button
+          type="submit"
+          className="w-full min-h-12"
+          size="lg"
+          disabled={totalQuantity === 0 || isPending}
+        >
+          {isPending ? (
+            <Loader2Icon className="size-4 animate-spin" />
+          ) : (
+            <ShoppingCartIcon className="size-4" />
+          )}
+          {totalQuantity === 0
+            ? "Select Tickets"
+            : `Proceed to Payment — ${formatPrice(total)}`}
+        </Button>
+      </div>
+      {/* Spacer to prevent content from being hidden behind the sticky button on mobile */}
+      <div className="h-20 lg:hidden" />
     </div>
   );
 }

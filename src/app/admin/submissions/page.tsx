@@ -55,14 +55,14 @@ export default async function AdminSubmissionsPage({
   return (
     <div>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Submission Queue</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Submission Queue</h1>
         <p className="mt-2 text-muted-foreground">
           Review and approve event submissions from artists and promoters.
         </p>
       </div>
 
       {/* Filter tabs */}
-      <div className="mt-6 flex flex-wrap items-center gap-2">
+      <div className="mt-6 flex items-center gap-2 overflow-x-auto pb-2">
         {filterTabs.map((tab) => {
           const isActive = currentStatus === tab.value;
           return (
@@ -108,7 +108,7 @@ export default async function AdminSubmissionsPage({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border">
+          <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
                 <TableRow>

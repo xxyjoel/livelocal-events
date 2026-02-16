@@ -15,9 +15,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LiveLocal - Discover Events Near You",
+  title: {
+    default: "LiveLocal Events — Discover Local Events Near You",
+    template: "%s | LiveLocal Events",
+  },
   description:
-    "Discover local events, live music, and experiences happening near you. Buy tickets, support local artists, and never miss a show.",
+    "Find live music, concerts, comedy, and local events near you. Discover hidden gems and buy tickets.",
+  metadataBase: new URL(
+    process.env.AUTH_URL || "https://livelocal.events"
+  ),
 };
 
 export default function RootLayout({

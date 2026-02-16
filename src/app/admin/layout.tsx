@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { AdminMobileNav } from "@/components/admin/admin-mobile-nav";
 
 const sidebarLinks = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboardIcon },
@@ -62,19 +63,11 @@ export default function AdminLayout({
             Admin
           </Link>
           <div className="flex-1" />
-          <nav className="flex items-center gap-1">
-            {sidebarLinks.map((link) => (
-              <Button key={link.href} asChild variant="ghost" size="icon-sm">
-                <Link href={link.href} title={link.label}>
-                  <link.icon className="size-4" />
-                </Link>
-              </Button>
-            ))}
-          </nav>
+          <AdminMobileNav />
         </header>
 
         {/* Main content */}
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

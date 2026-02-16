@@ -463,3 +463,61 @@ export async function getPendingSubmissions() {
     orderBy: asc(events.createdAt),
   });
 }
+
+/**
+ * Get event submissions with optional status filter for the admin moderation queue.
+ * When no status is provided, returns all events that have a submissionStatus set.
+ */
+export async function getSubmissions(status?: string) {
+  const validStatuses = [
+    "pending_review",
+    "approved",
+    "rejected",
+    "needs_revision",
+  ] as const;
+
+  type SubmissionStatus = (typeof validStatuses)[number];
+
+  const conditions = [];
+
+  if (status && validStatuses.includes(status as SubmissionStatus)) {
+    conditions.push(
+      eq(events.submissionStatus, status as SubmissionStatus)
+    );
+  } else {
+    // Only return events that are submissions (have a submissionStatus set)
+    conditions.push(
+      sql`${events.submissionStatus} IS NOT NULL`
+    );
+  }
+
+  return db.query.events.findMany({
+    where: conditions.length > 0 ? and(...conditions) : undefined,
+    with: {
+      venue: {
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          city: true,
+          state: true,
+        },
+      },
+      category: {
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+      submitter: {
+        columns: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: desc(events.createdAt),
+  });
+}

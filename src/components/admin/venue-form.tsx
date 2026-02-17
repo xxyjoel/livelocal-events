@@ -50,6 +50,8 @@ export function VenueForm({ defaultValues, action }: VenueFormProps) {
       capacity: undefined,
       website: "",
       imageUrl: "",
+      facebookPageUrl: "",
+      facebookPageId: "",
       ...defaultValues,
     },
   });
@@ -270,6 +272,45 @@ export function VenueForm({ defaultValues, action }: VenueFormProps) {
             </FormItem>
           )}
         />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="facebookPageUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Facebook Page URL</FormLabel>
+                <FormControl>
+                  <Input
+                    type="url"
+                    placeholder="https://facebook.com/venue-page"
+                    {...field}
+                    value={field.value ?? ""}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="facebookPageId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Facebook Page ID</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g. 123456789"
+                    {...field}
+                    value={field.value ?? ""}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <Button type="submit" disabled={isPending} className="w-full">
           {isPending && <Loader2Icon className="size-4 animate-spin" />}

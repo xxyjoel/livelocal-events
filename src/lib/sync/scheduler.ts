@@ -1,34 +1,15 @@
 import { syncTicketmasterEvents } from "@/lib/sync/ticketmaster";
 import { syncSeatGeekEvents } from "@/lib/sync/seatgeek";
+import { syncFacebookGraphEvents } from "@/lib/sync/facebook-graph";
+import { syncFacebookScrapedEvents } from "@/lib/sync/facebook-scraper";
 import { discoverVenues } from "@/lib/sync/google-places";
-
-// ---------------------------------------------------------------------------
-// Default sync configuration
-// ---------------------------------------------------------------------------
-
-const SYNC_CITIES = [
-  { city: "New York", stateCode: "NY" },
-  { city: "Los Angeles", stateCode: "CA" },
-  { city: "Chicago", stateCode: "IL" },
-  { city: "Austin", stateCode: "TX" },
-  { city: "Nashville", stateCode: "TN" },
-] as const;
-
-const SYNC_LOCATIONS = [
-  { lat: 40.7128, lon: -74.006, range: "25mi" },
-  { lat: 34.0522, lon: -118.2437, range: "30mi" },
-  { lat: 41.8781, lon: -87.6298, range: "20mi" },
-  { lat: 30.2672, lon: -97.7431, range: "15mi" },
-  { lat: 36.1627, lon: -86.7816, range: "15mi" },
-] as const;
-
-const DISCOVERY_METROS = [
-  { name: "New York", lat: 40.7128, lng: -74.006, radiusMeters: 25000 },
-  { name: "Los Angeles", lat: 34.0522, lng: -118.2437, radiusMeters: 30000 },
-  { name: "Chicago", lat: 41.8781, lng: -87.6298, radiusMeters: 20000 },
-  { name: "Austin", lat: 30.2672, lng: -97.7431, radiusMeters: 15000 },
-  { name: "Nashville", lat: 36.1627, lng: -86.7816, radiusMeters: 15000 },
-] as const;
+import {
+  toTicketmasterCities,
+  toSeatGeekLocations,
+  toGooglePlacesMetros,
+} from "@/lib/config/metros";
+import { db } from "@/lib/db";
+import { syncLogs } from "@/lib/db/schema";
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -38,18 +19,28 @@ export interface EventSyncResult {
   ticketmaster: {
     eventsCreated: number;
     eventsUpdated: number;
+    eventsInvalidated: number;
     venuesCreated: number;
     errors: string[];
   } | null;
   seatgeek: {
     eventsCreated: number;
     eventsUpdated: number;
+    eventsInvalidated: number;
     venuesCreated: number;
+    errors: string[];
+  } | null;
+  facebook: {
+    eventsCreated: number;
+    eventsUpdated: number;
+    venuesCreated: number;
+    pagesProcessed: number;
     errors: string[];
   } | null;
   totals: {
     eventsCreated: number;
     eventsUpdated: number;
+    eventsInvalidated: number;
     venuesCreated: number;
     errors: string[];
   };
@@ -74,6 +65,7 @@ export async function runEventSync(): Promise<EventSyncResult> {
 
   const hasTicketmaster = !!process.env.TICKETMASTER_API_KEY;
   const hasSeatGeek = !!process.env.SEATGEEK_CLIENT_ID;
+  const hasFacebookGraph = !!process.env.FACEBOOK_ACCESS_TOKEN;
 
   if (!hasTicketmaster) {
     console.log("[EventSync] TICKETMASTER_API_KEY not configured, skipping Ticketmaster sync");
@@ -81,15 +73,21 @@ export async function runEventSync(): Promise<EventSyncResult> {
   if (!hasSeatGeek) {
     console.log("[EventSync] SEATGEEK_CLIENT_ID not configured, skipping SeatGeek sync");
   }
+  if (!hasFacebookGraph) {
+    console.log("[EventSync] FACEBOOK_ACCESS_TOKEN not configured, skipping Facebook Graph API sync");
+  }
+  // Facebook scraper always runs — it scrapes public pages without an API key
+  console.log("[EventSync] Facebook scraper will run for all active pages");
 
   // Run available syncs in parallel
-  const [ticketmasterResult, seatgeekResult] = await Promise.all([
+  const [ticketmasterResult, seatgeekResult, facebookResult] = await Promise.all([
     hasTicketmaster
-      ? syncTicketmasterEvents({ cities: [...SYNC_CITIES] }).catch((error) => {
+      ? syncTicketmasterEvents({ cities: toTicketmasterCities() }).catch((error) => {
           console.error("[EventSync] Ticketmaster sync failed:", error);
           return {
             eventsCreated: 0,
             eventsUpdated: 0,
+            eventsInvalidated: 0,
             venuesCreated: 0,
             errors: [
               `Ticketmaster sync failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -98,11 +96,12 @@ export async function runEventSync(): Promise<EventSyncResult> {
         })
       : null,
     hasSeatGeek
-      ? syncSeatGeekEvents({ locations: [...SYNC_LOCATIONS] }).catch((error) => {
+      ? syncSeatGeekEvents({ locations: toSeatGeekLocations() }).catch((error) => {
           console.error("[EventSync] SeatGeek sync failed:", error);
           return {
             eventsCreated: 0,
             eventsUpdated: 0,
+            eventsInvalidated: 0,
             venuesCreated: 0,
             errors: [
               `SeatGeek sync failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -110,18 +109,58 @@ export async function runEventSync(): Promise<EventSyncResult> {
           };
         })
       : null,
+    // Facebook: Graph API needs token, scraper always runs on public pages
+    (async () => {
+      const graphResult = hasFacebookGraph
+        ? await syncFacebookGraphEvents()
+        : { eventsCreated: 0, eventsUpdated: 0, venuesCreated: 0, pagesProcessed: 0, errors: [] };
+      const scraperResult = await syncFacebookScrapedEvents();
+      return {
+        eventsCreated: graphResult.eventsCreated + scraperResult.eventsCreated,
+        eventsUpdated: graphResult.eventsUpdated + scraperResult.eventsUpdated,
+        venuesCreated: graphResult.venuesCreated + scraperResult.venuesCreated,
+        pagesProcessed: graphResult.pagesProcessed + scraperResult.pagesProcessed,
+        errors: [...graphResult.errors, ...scraperResult.errors],
+      };
+    })().catch((error) => {
+      console.error("[EventSync] Facebook sync failed:", error);
+      return {
+        eventsCreated: 0,
+        eventsUpdated: 0,
+        venuesCreated: 0,
+        pagesProcessed: 0,
+        errors: [
+          `Facebook sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        ],
+      };
+    }),
   ]);
+
+  const eventsInvalidated =
+    (ticketmasterResult?.eventsInvalidated ?? 0) +
+    (seatgeekResult?.eventsInvalidated ?? 0);
 
   const totals = {
     eventsCreated:
-      (ticketmasterResult?.eventsCreated ?? 0) + (seatgeekResult?.eventsCreated ?? 0),
+      (ticketmasterResult?.eventsCreated ?? 0) +
+      (seatgeekResult?.eventsCreated ?? 0) +
+      (facebookResult?.eventsCreated ?? 0),
     eventsUpdated:
-      (ticketmasterResult?.eventsUpdated ?? 0) + (seatgeekResult?.eventsUpdated ?? 0),
+      (ticketmasterResult?.eventsUpdated ?? 0) +
+      (seatgeekResult?.eventsUpdated ?? 0) +
+      (facebookResult?.eventsUpdated ?? 0),
+    eventsInvalidated,
     venuesCreated:
-      (ticketmasterResult?.venuesCreated ?? 0) + (seatgeekResult?.venuesCreated ?? 0),
+      (ticketmasterResult?.venuesCreated ?? 0) +
+      (seatgeekResult?.venuesCreated ?? 0) +
+      (facebookResult?.venuesCreated ?? 0),
     errors: [
       ...(ticketmasterResult?.errors ?? []),
       ...(seatgeekResult?.errors ?? []),
+      ...(facebookResult?.errors ?? []),
+      ...(eventsInvalidated > 0
+        ? [`${eventsInvalidated} event(s) invalidated (marked as cancelled)`]
+        : []),
     ],
   };
 
@@ -130,9 +169,61 @@ export async function runEventSync(): Promise<EventSyncResult> {
   console.log("[EventSync] Completed in %dms", durationMs);
   console.log("[EventSync] Stats:", JSON.stringify(totals));
 
+  // Write sync logs for each source
+  const logEntries = [];
+  if (ticketmasterResult) {
+    logEntries.push({
+      source: "ticketmaster",
+      metro: "seattle",
+      status: ticketmasterResult.errors.length > 0 ? "partial" : "success",
+      eventsCreated: ticketmasterResult.eventsCreated,
+      eventsUpdated: ticketmasterResult.eventsUpdated,
+      venuesCreated: ticketmasterResult.venuesCreated,
+      errors: ticketmasterResult.errors.length > 0 ? ticketmasterResult.errors : null,
+      durationMs,
+      completedAt: new Date(),
+    });
+  }
+  if (seatgeekResult) {
+    logEntries.push({
+      source: "seatgeek",
+      metro: "seattle",
+      status: seatgeekResult.errors.length > 0 ? "partial" : "success",
+      eventsCreated: seatgeekResult.eventsCreated,
+      eventsUpdated: seatgeekResult.eventsUpdated,
+      venuesCreated: seatgeekResult.venuesCreated,
+      errors: seatgeekResult.errors.length > 0 ? seatgeekResult.errors : null,
+      durationMs,
+      completedAt: new Date(),
+    });
+  }
+  if (facebookResult) {
+    logEntries.push({
+      source: "facebook",
+      metro: "seattle",
+      status: facebookResult.errors.length > 0 ? "partial" : "success",
+      eventsCreated: facebookResult.eventsCreated,
+      eventsUpdated: facebookResult.eventsUpdated,
+      venuesCreated: facebookResult.venuesCreated,
+      errors: facebookResult.errors.length > 0 ? facebookResult.errors : null,
+      durationMs,
+      completedAt: new Date(),
+    });
+  }
+
+  // Write all logs
+  if (logEntries.length > 0) {
+    try {
+      await db.insert(syncLogs).values(logEntries);
+    } catch (logError) {
+      console.error("[EventSync] Failed to write sync logs:", logError);
+    }
+  }
+
   return {
     ticketmaster: ticketmasterResult,
     seatgeek: seatgeekResult,
+    facebook: facebookResult,
     totals,
     durationMs,
   };
@@ -160,7 +251,7 @@ export async function runVenueDiscovery(): Promise<VenueDiscoveryResult> {
   }
 
   try {
-    const result = await discoverVenues({ metros: [...DISCOVERY_METROS] });
+    const result = await discoverVenues({ metros: toGooglePlacesMetros() });
 
     const durationMs = Date.now() - startTime;
 

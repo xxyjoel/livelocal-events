@@ -8,6 +8,8 @@ import {
   CalendarIcon,
   MapPinIcon,
   InboxIcon,
+  RefreshCwIcon,
+  GlobeIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +25,8 @@ const adminLinks = [
   { href: "/admin/events", label: "Events", icon: CalendarIcon },
   { href: "/admin/venues", label: "Venues", icon: MapPinIcon },
   { href: "/admin/submissions", label: "Submissions", icon: InboxIcon },
+  { href: "/admin/sources", label: "Sources", icon: RefreshCwIcon },
+  { href: "/admin/facebook-pages", label: "Facebook Pages", icon: GlobeIcon },
 ];
 
 export function AdminMobileNav() {

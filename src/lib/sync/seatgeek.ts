@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/lib/db";
 import { events, venues, categories } from "@/lib/db/schema";
 import { slugify } from "@/lib/utils";
+import { normalizeTags } from "@/lib/sync/tag-normalizer";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -11,6 +12,33 @@ import { slugify } from "@/lib/utils";
 const SEATGEEK_BASE_URL = "https://api.seatgeek.com/2";
 const MAX_PER_PAGE = 100;
 const DEFAULT_DAYS_AHEAD = 30;
+
+/**
+ * Validate that a SeatGeek event still exists via a direct lookup.
+ *
+ * @returns `'valid'` if the event exists, `'not_found'` if SeatGeek returns 404,
+ *          or `'error'` for any other failure.
+ */
+export async function validateSeatGeekEvent(
+  externalId: string
+): Promise<"valid" | "not_found" | "error"> {
+  const clientId = process.env.SEATGEEK_CLIENT_ID;
+  if (!clientId) return "error";
+
+  try {
+    const url = `${SEATGEEK_BASE_URL}/events/${encodeURIComponent(externalId)}?client_id=${clientId}`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    if (response.ok) return "valid";
+    if (response.status === 404) return "not_found";
+    return "error";
+  } catch {
+    return "error";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // SeatGeek API Response Types
@@ -137,6 +165,7 @@ export interface SyncSeatGeekEventsOptions {
 export interface SyncSeatGeekResult {
   eventsCreated: number;
   eventsUpdated: number;
+  eventsInvalidated: number;
   venuesCreated: number;
   errors: string[];
 }
@@ -360,6 +389,7 @@ export async function syncSeatGeekEvents(
   const stats: SyncSeatGeekResult = {
     eventsCreated: 0,
     eventsUpdated: 0,
+    eventsInvalidated: 0,
     venuesCreated: 0,
     errors: [],
   };
@@ -392,6 +422,14 @@ export async function syncSeatGeekEvents(
           continue;
         }
         processedEventIds.add(externalId);
+
+        // Skip events with no URL
+        if (!sgEvent.url) {
+          stats.errors.push(
+            `SeatGeek event ${sgEvent.id} ("${sgEvent.title}") has no URL — skipping.`
+          );
+          continue;
+        }
 
         try {
           // 1. Upsert venue
@@ -456,6 +494,17 @@ export async function syncSeatGeekEvents(
             .limit(1);
 
           if (existingEvent[0]) {
+            // Validate that the event still exists on SeatGeek
+            const validity = await validateSeatGeekEvent(externalId);
+
+            if (validity === "not_found") {
+              // Event no longer exists on SeatGeek — mark as cancelled
+              await db
+                .update(events)
+                .set({ status: "cancelled", updatedAt: new Date() })
+                .where(eq(events.id, existingEvent[0].id));
+              stats.eventsInvalidated++;
+            } else {
             // Update existing event
             await db
               .update(events)
@@ -466,6 +515,7 @@ export async function syncSeatGeekEvents(
               .where(eq(events.id, existingEvent[0].id));
 
             stats.eventsUpdated++;
+            }
           } else {
             // Create new event
             const id = createId();
@@ -649,28 +699,28 @@ function normalizePrices(stats: SeatGeekStats): {
  * Includes the event type and taxonomy names as tags.
  */
 function buildTags(sgEvent: SeatGeekEvent): string[] {
-  const tags = new Set<string>();
+  const rawTags: string[] = [];
 
   // Add event type
   if (sgEvent.type) {
-    tags.add(sgEvent.type.toLowerCase().replace(/_/g, "-"));
+    rawTags.push(sgEvent.type.toLowerCase().replace(/_/g, "-"));
   }
 
   // Add taxonomy names
   for (const taxonomy of sgEvent.taxonomies ?? []) {
     if (taxonomy.name) {
-      tags.add(taxonomy.name.toLowerCase().replace(/\s+/g, "-"));
+      rawTags.push(taxonomy.name.toLowerCase().replace(/\s+/g, "-"));
     }
   }
 
   // Add performer types
   for (const performer of sgEvent.performers ?? []) {
     if (performer.type) {
-      tags.add(performer.type.toLowerCase().replace(/_/g, "-"));
+      rawTags.push(performer.type.toLowerCase().replace(/_/g, "-"));
     }
   }
 
-  return Array.from(tags);
+  return normalizeTags(rawTags);
 }
 
 /**

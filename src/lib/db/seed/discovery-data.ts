@@ -1,4 +1,4 @@
-import { eq, count } from "drizzle-orm";
+import { eq, count, inArray, isNull } from "drizzle-orm";
 import { db } from "../index";
 import {
   categories,
@@ -7,6 +7,8 @@ import {
   artists,
   eventArtists,
   ticketTypes,
+  orders,
+  tickets,
 } from "../schema";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -208,6 +210,106 @@ const ARTISTS = [
   },
 ];
 
+// ── Category-only seed ────────────────────────────────────────────────
+
+/**
+ * Seed ONLY the 8 categories required by sync category mappers.
+ * Idempotent: skips categories that already exist.
+ */
+export async function seedCategories(): Promise<void> {
+  const existingCats = await db
+    .select({ slug: categories.slug })
+    .from(categories);
+  const existingSlugs = new Set(existingCats.map((c) => c.slug));
+  const newCategories = CATEGORIES.filter((c) => !existingSlugs.has(c.slug));
+
+  if (newCategories.length > 0) {
+    await db.insert(categories).values(newCategories);
+    console.log(`[SeedCategories] Inserted ${newCategories.length} new categories`);
+  } else {
+    console.log(`[SeedCategories] All ${CATEGORIES.length} categories already exist`);
+  }
+}
+
+// ── Clear fabricated data ─────────────────────────────────────────────
+
+/** Slugs of all seed-data venues. */
+const SEED_VENUE_SLUGS = VENUES.map((v) => v.slug);
+
+/** Slugs of all seed-data artists. */
+const SEED_ARTIST_SLUGS = ARTISTS.map((a) => a.slug);
+
+/**
+ * Delete all fabricated (non-synced) events and their dependent rows.
+ *
+ * Targets events where `externalSource IS NULL` — these are fabricated seed
+ * events that have no external source. Also deletes seed artists and venues
+ * by slug. Does NOT delete categories (required by sync mappers).
+ *
+ * Deletion order respects FK constraints:
+ *   tickets → orders → ticket_types → event_artists → events → artists → venues
+ */
+export async function clearFabricatedEvents(): Promise<void> {
+  console.log("[ClearFabricated] Removing fabricated (non-synced) data...");
+
+  // Find all events with no external source
+  const fabricatedEvents = await db
+    .select({ id: events.id })
+    .from(events)
+    .where(isNull(events.externalSource));
+  const fabricatedEventIds = fabricatedEvents.map((e) => e.id);
+
+  if (fabricatedEventIds.length > 0) {
+    // 1. tickets
+    await db.delete(tickets).where(inArray(tickets.eventId, fabricatedEventIds));
+    console.log("[ClearFabricated] Deleted tickets for fabricated events");
+
+    // 2. orders
+    await db.delete(orders).where(inArray(orders.eventId, fabricatedEventIds));
+    console.log("[ClearFabricated] Deleted orders for fabricated events");
+
+    // 3. ticket_types
+    await db.delete(ticketTypes).where(inArray(ticketTypes.eventId, fabricatedEventIds));
+    console.log("[ClearFabricated] Deleted ticket_types for fabricated events");
+
+    // 4. event_artists
+    await db.delete(eventArtists).where(inArray(eventArtists.eventId, fabricatedEventIds));
+    console.log("[ClearFabricated] Deleted event_artists for fabricated events");
+
+    // 5. events
+    await db.delete(events).where(inArray(events.id, fabricatedEventIds));
+    console.log(`[ClearFabricated] Deleted ${fabricatedEventIds.length} fabricated events`);
+  } else {
+    console.log("[ClearFabricated] No fabricated events found");
+  }
+
+  // 6. seed artists
+  const seedArtists = await db
+    .select({ id: artists.id })
+    .from(artists)
+    .where(inArray(artists.slug, SEED_ARTIST_SLUGS));
+  const seedArtistIds = seedArtists.map((a) => a.id);
+
+  if (seedArtistIds.length > 0) {
+    await db.delete(artists).where(inArray(artists.id, seedArtistIds));
+    console.log(`[ClearFabricated] Deleted ${seedArtistIds.length} seed artists`);
+  }
+
+  // 7. seed venues
+  const seedVenues = await db
+    .select({ id: venues.id })
+    .from(venues)
+    .where(inArray(venues.slug, SEED_VENUE_SLUGS));
+  const seedVenueIds = seedVenues.map((v) => v.id);
+
+  if (seedVenueIds.length > 0) {
+    await db.delete(venues).where(inArray(venues.id, seedVenueIds));
+    console.log(`[ClearFabricated] Deleted ${seedVenueIds.length} seed venues`);
+  }
+
+  console.log("[ClearFabricated] Done. Categories preserved.");
+}
+
 // ── Main seed function ────────────────────────────────────────────────
 
 export async function seedDiscoveryData(): Promise<void> {
@@ -302,23 +404,23 @@ export async function seedDiscoveryData(): Promise<void> {
       thumbnailUrl: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80",
     },
     {
-      title: "Seattle Summer Night Festival",
-      slug: "seattle-summer-night-festival",
+      title: "Seattle Winter Beer & Music Fest",
+      slug: "seattle-winter-beer-music-fest",
       description:
-        "The annual Seattle Summer Night Festival transforms Gas Works Park into a multi-stage celebration of music, food, and community. Featuring over 20 local food vendors, craft beer gardens, and live performances across three stages.\n\nThis year's lineup spans genres from electronic to folk, with headliners Chong the Nomad and Thunderpussy closing out the main stage. Family-friendly activities run until 6pm, with the main concert series beginning at 7pm.\n\nFree admission with optional VIP upgrades available for premium viewing areas and backstage access.",
+        "Pike Place Market hosts the annual Seattle Winter Beer & Music Fest, a celebration of craft brewing and live music in the heart of the city. Featuring over 30 local and regional breweries, cider makers, and live performances across two indoor stages.\n\nThis year's lineup spans genres from electronic to folk, with headliners Chong the Nomad and Thunderpussy closing out the main stage. Warm up with seasonal stouts, barrel-aged ales, and hot food from local vendors.\n\nFree admission with optional VIP upgrades available for premium tastings and backstage access.",
       shortDescription:
-        "Multi-stage festival with food, craft beer, and live music at Gas Works Park.",
+        "Indoor craft beer festival with live music at Pike Place Market.",
       startDate: daysFromNow(daysToSat, 12),
       endDate: daysFromNow(daysToSat, 23),
       doorsOpen: daysFromNow(daysToSat, 11),
-      venueId: venueMap["gas-works-park"],
+      venueId: venueMap["pike-place-market"],
       categoryId: catMap["festivals"],
       minPrice: 0,
       maxPrice: 7500,
       isFree: true,
       status: "published" as const,
       isFeatured: true,
-      tags: ["festival", "outdoor", "family-friendly", "food", "local"],
+      tags: ["festival", "beer", "family-friendly", "food", "local"],
       imageUrl: "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=1200&q=80",
       thumbnailUrl: "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=400&q=80",
     },
@@ -342,9 +444,6 @@ export async function seedDiscoveryData(): Promise<void> {
       tags: ["broadway", "musical", "hamilton", "theater"],
       imageUrl: "https://images.unsplash.com/photo-1507924538820-ede94a04019d?w=1200&q=80",
       thumbnailUrl: "https://images.unsplash.com/photo-1507924538820-ede94a04019d?w=400&q=80",
-      externalSource: "ticketmaster",
-      externalId: "tm-hamilton-sea-2026",
-      externalUrl: "https://www.ticketmaster.com/hamilton-seattle",
     },
 
     // --- WEEKEND (non-featured) ---
@@ -409,9 +508,6 @@ export async function seedDiscoveryData(): Promise<void> {
       tags: ["nhl", "hockey", "kraken", "sports"],
       imageUrl: "https://images.unsplash.com/photo-1580748142789-720bbb9ef37d?w=1200&q=80",
       thumbnailUrl: "https://images.unsplash.com/photo-1580748142789-720bbb9ef37d?w=400&q=80",
-      externalSource: "seatgeek",
-      externalId: "sg-kraken-canucks-2026",
-      externalUrl: "https://seatgeek.com/seattle-kraken-vs-vancouver-canucks",
     },
 
     // --- NEXT WEEK ---
@@ -437,12 +533,12 @@ export async function seedDiscoveryData(): Promise<void> {
       thumbnailUrl: "https://images.unsplash.com/photo-1571266028243-e4733b0f0bb0?w=400&q=80",
     },
     {
-      title: "Pike Place Artisan Market & Live Music",
-      slug: "pike-place-artisan-market",
+      title: "Pike Place Winter Craft Fair",
+      slug: "pike-place-winter-craft-fair",
       description:
-        "Pike Place Market hosts its monthly artisan market featuring local craftspeople, jewelers, painters, and potters alongside acoustic live music from Seattle singer-songwriters.\n\nBrowse handmade goods, sample local food vendors, and enjoy the unique atmosphere of one of America's oldest continuously operating public farmers markets. Free and open to all ages.",
+        "Pike Place Market hosts its seasonal winter craft fair featuring local craftspeople, jewelers, painters, and potters alongside acoustic live music from Seattle singer-songwriters.\n\nBrowse handmade winter goods, sample seasonal treats from local food vendors, and enjoy the cozy atmosphere of one of America's oldest continuously operating public farmers markets. Free and open to all ages.",
       shortDescription:
-        "Free artisan market with live acoustic music at Pike Place.",
+        "Free indoor winter craft fair with live acoustic music at Pike Place.",
       startDate: daysFromNow(daysToSat + 7, 10),
       endDate: daysFromNow(daysToSat + 7, 17),
       venueId: venueMap["pike-place-market"],
@@ -450,25 +546,25 @@ export async function seedDiscoveryData(): Promise<void> {
       isFree: true,
       status: "published" as const,
       isFeatured: false,
-      tags: ["art", "market", "free", "family-friendly", "music"],
+      tags: ["art", "market", "free", "family-friendly", "winter"],
       imageUrl: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1200&q=80",
       thumbnailUrl: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=400&q=80",
     },
     {
-      title: "Community Yoga in the Park",
-      slug: "community-yoga-park",
+      title: "Lunar New Year Community Celebration",
+      slug: "lunar-new-year-community-celebration",
       description:
-        "Join the Seattle community for a free outdoor yoga session at Gas Works Park. All levels are welcome — bring your own mat and water. Instructors from three local studios lead a 75-minute flow against the backdrop of the Seattle skyline.\n\nThis weekly community event runs rain or shine (we are Seattleites after all). Coffee and smoothies available from local vendors afterward.",
+        "Celebrate the Lunar New Year with the Seattle community at Neumos! This free indoor celebration features traditional lion dances, live performances, cultural exhibitions, and delicious food from local Asian restaurants and food trucks.\n\nAll ages welcome. Enjoy calligraphy demonstrations, lantern making, and live music spanning genres from traditional to modern Asian-American artists. A beloved annual tradition bringing Seattle's diverse communities together.",
       shortDescription:
-        "Free outdoor yoga for all levels at Gas Works Park.",
-      startDate: daysFromNow(daysToSat + 1, 9),
-      endDate: daysFromNow(daysToSat + 1, 11),
-      venueId: venueMap["gas-works-park"],
+        "Free Lunar New Year celebration with performances, food, and culture.",
+      startDate: daysFromNow(daysToSat + 8, 11),
+      endDate: daysFromNow(daysToSat + 8, 17),
+      venueId: venueMap["neumos"],
       categoryId: catMap["community"],
       isFree: true,
       status: "published" as const,
       isFeatured: false,
-      tags: ["yoga", "free", "outdoor", "wellness", "community"],
+      tags: ["cultural", "free", "family-friendly", "community", "lunar-new-year"],
       imageUrl: "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=1200&q=80",
       thumbnailUrl: "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=400&q=80",
     },
@@ -556,19 +652,19 @@ export async function seedDiscoveryData(): Promise<void> {
       sortOrder: 0,
     },
     {
-      eventId: eventMap["seattle-summer-night-festival"],
+      eventId: eventMap["seattle-winter-beer-music-fest"],
       artistId: artistMap["chong-the-nomad"],
       isHeadliner: true,
       sortOrder: 0,
     },
     {
-      eventId: eventMap["seattle-summer-night-festival"],
+      eventId: eventMap["seattle-winter-beer-music-fest"],
       artistId: artistMap["thunderpussy"],
       isHeadliner: true,
       sortOrder: 1,
     },
     {
-      eventId: eventMap["seattle-summer-night-festival"],
+      eventId: eventMap["seattle-winter-beer-music-fest"],
       artistId: artistMap["the-black-tones"],
       isHeadliner: false,
       sortOrder: 2,
@@ -740,4 +836,27 @@ export async function seedDiscoveryData(): Promise<void> {
   console.log(`[SeedDiscovery] Inserted ${insertedTT.length} ticket_types`);
 
   console.log("[SeedDiscovery] Seed complete!");
+}
+
+// ── Reset function ────────────────────────────────────────────────────
+
+/**
+ * Delete existing seed data (in FK order) and re-run the seed.
+ *
+ * Uses clearFabricatedEvents() for event/artist/venue cleanup, then also
+ * deletes and re-seeds categories.
+ */
+export async function resetDiscoveryData(): Promise<void> {
+  console.log("[SeedDiscovery] Resetting discovery data...");
+
+  // Clear fabricated events, artists, and venues
+  await clearFabricatedEvents();
+
+  // Also delete categories (reset means full wipe + re-seed)
+  const seedCatSlugs = CATEGORIES.map((c) => c.slug);
+  await db.delete(categories).where(inArray(categories.slug, seedCatSlugs));
+  console.log("[SeedDiscovery] Deleted seed categories");
+
+  console.log("[SeedDiscovery] Reset complete. Re-seeding...");
+  await seedDiscoveryData();
 }

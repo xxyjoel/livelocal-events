@@ -12,9 +12,11 @@ export type ConfidenceScore = number;
 /** Describes why two records were considered duplicates. */
 export type VenueMatchReason =
   | "google_place_id"
+  | "facebook_page_id"
   | "exact_name_same_city"
   | "similar_name_same_city"
-  | "similar_name_nearby";
+  | "similar_name_nearby"
+  | "normalized_address";
 
 export type EventMatchReason =
   | "same_external_id"
@@ -44,9 +46,11 @@ export interface VenueCandidate {
   name: string;
   city?: string | null;
   state?: string | null;
+  address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   googlePlaceId?: string | null;
+  facebookPageId?: string | null;
 }
 
 export interface EventCandidate {
@@ -135,21 +139,111 @@ export function normalizeVenueName(name: string): string {
  * Applies the following transformations:
  * - Lowercase
  * - Remove common leading articles ("the", "a", "an")
+ * - Strip venue name appended to title ("Foo Fighters at The Showbox" -> "Foo Fighters")
+ * - Strip common suffixes ("Tickets", "Presale", "SOLD OUT", "Doors Xpm")
  * - Remove punctuation
  * - Collapse whitespace
  * - Trim leading/trailing whitespace
  *
  * @param title - The raw event title
+ * @param venueName - Optional venue name to strip from the title
  * @returns The normalized event title
  */
-export function normalizeEventTitle(title: string): string {
+export function normalizeEventTitle(title: string, venueName?: string): string {
   let normalized = title.toLowerCase();
+
+  // Strip venue name from title (e.g., "Foo Fighters at The Showbox")
+  if (venueName) {
+    const venueNorm = venueName.toLowerCase();
+    // Remove "at <venue>" or "@ <venue>"
+    normalized = normalized.replace(
+      new RegExp(`\\s*(?:at|@)\\s+${escapeRegExp(venueNorm)}\\s*$`, "i"),
+      ""
+    );
+    // Remove "- <venue>" at end
+    normalized = normalized.replace(
+      new RegExp(`\\s*-\\s*${escapeRegExp(venueNorm)}\\s*$`, "i"),
+      ""
+    );
+  }
+
+  // Remove common suffixes
+  normalized = normalized
+    .replace(/\b(tickets?|presale|pre-sale|on sale|sold out|postponed)\b/gi, "")
+    .replace(/\bdoors?\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b/gi, "")
+    .replace(/\b(ages?\s+\d+\+?|all ages|21\+|18\+)\b/gi, "");
 
   // Remove punctuation (keep letters, numbers, whitespace)
   normalized = normalized.replace(/[^\w\s]/g, "");
 
   // Remove leading articles
   normalized = normalized.replace(/^(the|a|an)\s+/i, "");
+
+  // Collapse whitespace and trim
+  normalized = normalized.replace(/\s+/g, " ").trim();
+
+  return normalized;
+}
+
+/**
+ * Escape special regex characters in a string.
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Address abbreviation expansions for normalization.
+ */
+const ADDRESS_ABBREVIATIONS: Record<string, string> = {
+  "st": "street",
+  "ave": "avenue",
+  "blvd": "boulevard",
+  "dr": "drive",
+  "ln": "lane",
+  "rd": "road",
+  "ct": "court",
+  "pl": "place",
+  "pkwy": "parkway",
+  "hwy": "highway",
+  "cir": "circle",
+  "sq": "square",
+  "n": "north",
+  "s": "south",
+  "e": "east",
+  "w": "west",
+  "ne": "northeast",
+  "nw": "northwest",
+  "se": "southeast",
+  "sw": "southwest",
+};
+
+/**
+ * Normalize a street address for fuzzy comparison.
+ *
+ * Applies:
+ * - Lowercase
+ * - Expand common abbreviations (St -> Street, Ave -> Avenue, etc.)
+ * - Remove unit/suite/apt numbers (e.g., "Suite 200", "Apt 3B", "#5")
+ * - Remove punctuation
+ * - Collapse whitespace
+ */
+export function normalizeAddress(address: string): string {
+  let normalized = address.toLowerCase();
+
+  // Remove unit/suite/apt designators and their numbers
+  normalized = normalized.replace(
+    /\b(suite|ste|apt|apartment|unit|#)\s*\w+/gi,
+    ""
+  );
+
+  // Remove punctuation (keep letters, numbers, whitespace)
+  normalized = normalized.replace(/[^\w\s]/g, "");
+
+  // Expand abbreviations (word boundaries)
+  normalized = normalized.replace(/\b(\w+)\b/g, (word) => {
+    return ADDRESS_ABBREVIATIONS[word] ?? word;
+  });
 
   // Collapse whitespace and trim
   normalized = normalized.replace(/\s+/g, " ").trim();
@@ -317,6 +411,23 @@ export async function findDuplicateVenue(
     }
   }
 
+  // ----- Strategy 1.5: Facebook Page ID exact match -----
+  if (venue.facebookPageId) {
+    const byFbId = await db
+      .select()
+      .from(venues)
+      .where(eq(venues.facebookPageId, venue.facebookPageId))
+      .limit(1);
+
+    if (byFbId.length > 0) {
+      return {
+        venue: byFbId[0],
+        confidence: 1.0,
+        reason: "facebook_page_id",
+      };
+    }
+  }
+
   // ----- Strategies 2 & 3: Name-based matching within the same city -----
   const normalizedCandidate = normalizeVenueName(venue.name);
 
@@ -356,6 +467,22 @@ export async function findDuplicateVenue(
           confidence: 0.9,
           reason: "similar_name_same_city",
         };
+      }
+    }
+
+    // Strategy 3.5: Normalized address match within same city
+    if (venue.address) {
+      const normalizedCandidateAddr = normalizeAddress(venue.address);
+      for (const existing of sameCityVenues) {
+        if (!existing.address) continue;
+        const normalizedExistingAddr = normalizeAddress(existing.address);
+        if (normalizedCandidateAddr === normalizedExistingAddr) {
+          return {
+            venue: existing,
+            confidence: 0.93,
+            reason: "normalized_address",
+          };
+        }
       }
     }
   }
@@ -780,4 +907,111 @@ export async function mergeVenues(
     .limit(1);
 
   return updatedResults[0];
+}
+
+// ---------------------------------------------------------------------------
+// Source Priority for Cross-Source Merging
+// ---------------------------------------------------------------------------
+
+/**
+ * Priority order for event sources. Higher = more authoritative.
+ * Used when deciding which source's data to prefer during dedup merges.
+ */
+const SOURCE_PRIORITY: Record<string, number> = {
+  ticketmaster: 4,
+  seatgeek: 3,
+  facebook: 2,
+  google_places: 1,
+  manual: 0,
+};
+
+/**
+ * Determine whether source A should take priority over source B
+ * when merging duplicate events.
+ *
+ * @param sourceA - The external source of event A
+ * @param sourceB - The external source of event B
+ * @returns true if sourceA has higher priority
+ */
+export function isHigherPrioritySource(
+  sourceA: string | null,
+  sourceB: string | null
+): boolean {
+  const priorityA = SOURCE_PRIORITY[sourceA ?? "manual"] ?? 0;
+  const priorityB = SOURCE_PRIORITY[sourceB ?? "manual"] ?? 0;
+  return priorityA > priorityB;
+}
+
+/**
+ * Merge supplementary data from a lower-priority duplicate event into
+ * the primary event. Only fills in missing fields — never overwrites
+ * existing data on the primary.
+ *
+ * @param primaryId - The ID of the higher-priority event to keep
+ * @param supplementaryEvent - The lower-priority duplicate event's data
+ */
+export async function enrichEventFromDuplicate(
+  primaryId: string,
+  supplementaryEvent: {
+    description?: string | null;
+    shortDescription?: string | null;
+    imageUrl?: string | null;
+    thumbnailUrl?: string | null;
+    minPrice?: number | null;
+    maxPrice?: number | null;
+    tags?: string[] | null;
+    externalUrl?: string | null;
+  }
+): Promise<void> {
+  const primaryResults = await db
+    .select()
+    .from(events)
+    .where(eq(events.id, primaryId))
+    .limit(1);
+
+  const primary = primaryResults[0];
+  if (!primary) return;
+
+  const updates: Record<string, unknown> = {};
+
+  // Fill in missing description
+  if (!primary.description && supplementaryEvent.description) {
+    updates.description = supplementaryEvent.description;
+  }
+  if (!primary.shortDescription && supplementaryEvent.shortDescription) {
+    updates.shortDescription = supplementaryEvent.shortDescription;
+  }
+
+  // Fill in missing images
+  if (!primary.imageUrl && supplementaryEvent.imageUrl) {
+    updates.imageUrl = supplementaryEvent.imageUrl;
+  }
+  if (!primary.thumbnailUrl && supplementaryEvent.thumbnailUrl) {
+    updates.thumbnailUrl = supplementaryEvent.thumbnailUrl;
+  }
+
+  // Fill in missing prices
+  if (primary.minPrice == null && supplementaryEvent.minPrice != null) {
+    updates.minPrice = supplementaryEvent.minPrice;
+  }
+  if (primary.maxPrice == null && supplementaryEvent.maxPrice != null) {
+    updates.maxPrice = supplementaryEvent.maxPrice;
+  }
+
+  // Merge tags (union of both sets)
+  if (supplementaryEvent.tags && supplementaryEvent.tags.length > 0) {
+    const existingTags = new Set(primary.tags ?? []);
+    for (const tag of supplementaryEvent.tags) {
+      existingTags.add(tag);
+    }
+    const mergedTags = Array.from(existingTags);
+    if (mergedTags.length > (primary.tags?.length ?? 0)) {
+      updates.tags = mergedTags;
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    updates.updatedAt = new Date();
+    await db.update(events).set(updates).where(eq(events.id, primaryId));
+  }
 }

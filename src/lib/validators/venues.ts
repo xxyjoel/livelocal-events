@@ -13,6 +13,14 @@ export const createVenueSchema = z.object({
   capacity: z.coerce.number().int().positive().optional(),
   imageUrl: z.string().url().optional(),
   website: z.string().url().optional(),
+  facebookPageUrl: z
+    .union([z.string().url(), z.literal("")])
+    .optional()
+    .transform((val) => (val === "" ? undefined : val)),
+  facebookPageId: z
+    .string()
+    .optional()
+    .transform((val) => (val === "" ? undefined : val)),
 });
 
 export const updateVenueSchema = createVenueSchema.partial();

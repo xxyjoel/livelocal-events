@@ -12,6 +12,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/lib/db";
 import { events, venues, categories } from "@/lib/db/schema";
 import { slugify } from "@/lib/utils";
+import { normalizeTags } from "@/lib/sync/tag-normalizer";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -144,6 +145,7 @@ export interface SyncOptions {
 export interface SyncResult {
   eventsCreated: number;
   eventsUpdated: number;
+  eventsInvalidated: number;
   venuesCreated: number;
   errors: string[];
 }
@@ -157,6 +159,33 @@ export interface SyncResult {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Validate that a Ticketmaster event still exists via a direct lookup.
+ *
+ * @returns `'valid'` if the event exists, `'not_found'` if TM returns 404,
+ *          or `'error'` for any other failure.
+ */
+export async function validateTicketmasterEvent(
+  externalId: string
+): Promise<"valid" | "not_found" | "error"> {
+  const apiKey = process.env.TICKETMASTER_API_KEY;
+  if (!apiKey) return "error";
+
+  try {
+    const url = `${TM_BASE_URL}/events/${encodeURIComponent(externalId)}.json?apikey=${apiKey}`;
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    if (response.ok) return "valid";
+    if (response.status === 404) return "not_found";
+    return "error";
+  } catch {
+    return "error";
+  }
 }
 
 /**
@@ -252,17 +281,17 @@ function selectImages(images: TmImage[] | undefined): {
 function extractTags(classifications: TmClassification[] | undefined): string[] {
   if (!classifications) return [];
 
-  const tagSet = new Set<string>();
+  const rawTags: string[] = [];
   for (const c of classifications) {
-    if (c.genre?.name && c.genre.name !== "Undefined") tagSet.add(c.genre.name);
+    if (c.genre?.name && c.genre.name !== "Undefined") rawTags.push(c.genre.name);
     if (c.subGenre?.name && c.subGenre.name !== "Undefined")
-      tagSet.add(c.subGenre.name);
-    if (c.type?.name && c.type.name !== "Undefined") tagSet.add(c.type.name);
+      rawTags.push(c.subGenre.name);
+    if (c.type?.name && c.type.name !== "Undefined") rawTags.push(c.type.name);
     if (c.subType?.name && c.subType.name !== "Undefined")
-      tagSet.add(c.subType.name);
+      rawTags.push(c.subType.name);
   }
 
-  return Array.from(tagSet);
+  return normalizeTags(rawTags);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +314,39 @@ const SEGMENT_TO_SLUG: Record<string, string> = {
   Undefined: "community",
 };
 
+/**
+ * Genre-level overrides. When a TM event's genre matches one of these,
+ * it overrides the segment-level mapping above.
+ */
+const GENRE_TO_SLUG: Record<string, string> = {
+  "Dance/Electronic": "nightlife",
+  "Electronic": "nightlife",
+  "Hip-Hop/Rap": "concerts",
+  "R&B": "concerts",
+  "Classical": "concerts",
+  "Jazz": "concerts",
+  "Blues": "concerts",
+  "Folk": "concerts",
+  "Country": "concerts",
+  "Latin": "concerts",
+  "Metal": "concerts",
+  "Punk": "concerts",
+  "Alternative": "concerts",
+  "Rock": "concerts",
+  "Pop": "concerts",
+  "World": "concerts",
+  "Comedy": "comedy",
+  "Festival": "festivals",
+  "Theatre": "theater",
+  "Musical": "theater",
+  "Opera": "theater",
+  "Dance": "arts",
+  "Ballet": "arts",
+  "Circus & Specialty Acts": "arts",
+  "Magic & Illusion": "arts",
+  "Family": "community",
+};
+
 /** In-memory cache of category slug -> id so we don't query every time. */
 const categoryCache = new Map<string, string>();
 
@@ -300,8 +362,13 @@ export async function mapTicketmasterCategory(
   classifications: TmClassification[] | undefined
 ): Promise<string> {
   const primary = classifications?.find((c) => c.primary) ?? classifications?.[0];
+
+  // Check genre-level override first (more specific than segment)
+  const genreName = primary?.genre?.name;
+  const genreSlug = genreName ? GENRE_TO_SLUG[genreName] : undefined;
+
   const segmentName = primary?.segment?.name ?? "Music";
-  const slug = SEGMENT_TO_SLUG[segmentName] ?? "concerts";
+  const slug = genreSlug ?? SEGMENT_TO_SLUG[segmentName] ?? "concerts";
 
   // Check cache
   const cached = categoryCache.get(slug);
@@ -570,6 +637,7 @@ export async function syncTicketmasterEvents(
   const stats: SyncResult = {
     eventsCreated: 0,
     eventsUpdated: 0,
+    eventsInvalidated: 0,
     venuesCreated: 0,
     errors: [],
   };
@@ -630,6 +698,14 @@ export async function syncTicketmasterEvents(
  * Process a single TM event: upsert venue, map category, upsert event.
  */
 async function processEvent(tmEvent: TmEvent, stats: SyncResult): Promise<void> {
+  // --- URL check ---
+  if (!tmEvent.url) {
+    stats.errors.push(
+      `Event "${tmEvent.name}" (${tmEvent.id}) has no URL — skipping.`
+    );
+    return;
+  }
+
   // --- Venue ---
   const tmVenue = tmEvent._embedded?.venues?.[0];
   if (!tmVenue) {
@@ -727,6 +803,20 @@ async function processEvent(tmEvent: TmEvent, stats: SyncResult): Promise<void> 
     .limit(1);
 
   if (existingEvent[0]) {
+    // Validate that the event still exists on Ticketmaster
+    await sleep(RATE_LIMIT_DELAY_MS);
+    const validity = await validateTicketmasterEvent(tmEvent.id);
+
+    if (validity === "not_found") {
+      // Event no longer exists on Ticketmaster — mark as cancelled
+      await db
+        .update(events)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(eq(events.id, existingEvent[0].id));
+      stats.eventsInvalidated++;
+      return;
+    }
+
     // Update existing event
     await db
       .update(events)

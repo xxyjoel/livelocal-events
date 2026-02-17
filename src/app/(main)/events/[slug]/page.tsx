@@ -21,7 +21,8 @@ import { Separator } from "@/components/ui/separator";
 import { EventCard } from "@/components/events/event-card";
 import { ShareButton } from "@/components/events/share-button";
 import { formatEventDate, formatPrice } from "@/lib/utils";
-import { getMockEvent, getMockSimilarEvents } from "@/lib/mock-data";
+import { getEventBySlug, getSimilarEvents } from "@/lib/db/queries/events";
+import { toEventDetail, toEventCard } from "@/lib/db/mappers";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 
 // ---- SEO Metadata ----
@@ -32,12 +33,13 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const event = getMockEvent(slug);
+  const dbEvent = await getEventBySlug(slug);
 
-  if (!event) {
+  if (!dbEvent) {
     return { title: "Event Not Found" };
   }
 
+  const event = toEventDetail(dbEvent);
   const description =
     event.shortDescription || event.description.slice(0, 160);
 
@@ -97,13 +99,15 @@ export default async function EventDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = getMockEvent(slug);
+  const dbEvent = await getEventBySlug(slug);
 
-  if (!event) {
+  if (!dbEvent) {
     notFound();
   }
 
-  const similarEvents = getMockSimilarEvents(slug, 4);
+  const event = toEventDetail(dbEvent);
+  const similarDbEvents = await getSimilarEvents(event.id, dbEvent.categoryId, 4);
+  const similarEvents = similarDbEvents.map(toEventCard);
 
   // JSON-LD structured data
   const jsonLd = {

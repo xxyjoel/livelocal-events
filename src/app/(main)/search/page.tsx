@@ -4,7 +4,8 @@ import { createSearchParamsCache, parseAsString, parseAsInteger } from "nuqs/ser
 import { EventCard } from "@/components/events/event-card";
 import { SearchInput } from "@/components/events/search-input";
 import { EventFilters } from "@/components/events/event-filters";
-import { getMockSearchResults, type SearchFilters } from "@/lib/mock-data";
+import { searchEventsForDiscovery } from "@/lib/db/queries/events";
+import { searchResultToEventCard } from "@/lib/db/mappers";
 import { SITE_NAME } from "@/lib/constants";
 
 // ---- SEO Metadata ----
@@ -30,6 +31,8 @@ const searchParamsCache = createSearchParamsCache({
 
 // ---- Page Component ----
 
+const PAGE_SIZE = 12;
+
 export default async function SearchPage({
   searchParams,
 }: {
@@ -37,18 +40,21 @@ export default async function SearchPage({
 }) {
   const params = searchParamsCache.parse(await searchParams);
 
-  const filters: SearchFilters = {
+  const page = params.page;
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const { events: dbEvents, total } = await searchEventsForDiscovery({
     q: params.q || undefined,
-    category: params.category ?? undefined,
+    categorySlug: params.category ?? undefined,
     date: params.date ?? undefined,
-    distance: params.distance,
     minPrice: params.minPrice ?? undefined,
     maxPrice: params.maxPrice ?? undefined,
     sort: params.sort,
-    page: params.page,
-  };
+    limit: PAGE_SIZE,
+    offset,
+  });
 
-  const { events, total, page, pageSize } = getMockSearchResults(filters);
+  const events = dbEvents.map(searchResultToEventCard);
 
   const hasFilters =
     params.q ||
@@ -125,10 +131,10 @@ export default async function SearchPage({
         )}
 
         {/* Pagination placeholder */}
-        {total > pageSize && (
+        {total > PAGE_SIZE && (
           <div className="mt-8 flex items-center justify-center gap-2">
             <p className="text-sm text-muted-foreground">
-              Page {page} of {Math.ceil(total / pageSize)}
+              Page {page} of {Math.ceil(total / PAGE_SIZE)}
             </p>
           </div>
         )}

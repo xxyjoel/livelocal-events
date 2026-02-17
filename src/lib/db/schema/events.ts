@@ -14,6 +14,7 @@ import { venues } from "./venues";
 import { categories } from "./categories";
 import { users } from "./users";
 import { eventArtists } from "./artists";
+import { ticketTypes } from "./tickets";
 
 export const eventStatusEnum = pgEnum("event_status", [
   "draft",
@@ -84,6 +85,8 @@ export const events = pgTable(
     ),
     index("events_status_idx").on(table.status),
     index("events_start_date_idx").on(table.startDate),
+    index("events_category_status_idx").on(table.categoryId, table.status),
+    index("events_venue_start_date_idx").on(table.venueId, table.startDate),
   ]
 );
 
@@ -107,4 +110,5 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     relationName: "submittedEvents",
   }),
   eventArtists: many(eventArtists),
+  ticketTypes: many(ticketTypes),
 }));

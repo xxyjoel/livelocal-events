@@ -1,4 +1,4 @@
-import { eq, and, or, desc, asc, sql, ilike } from "drizzle-orm";
+import { eq, and, or, gte, lt, ne, desc, asc, sql, ilike, count } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/lib/db";
 import { events, venues, categories } from "@/lib/db/schema";
@@ -132,6 +132,7 @@ export async function getEventBySlug(slug: string) {
         },
         orderBy: (eventArtists, { asc }) => [asc(eventArtists.sortOrder)],
       },
+      ticketTypes: true,
     },
   });
 
@@ -521,3 +522,269 @@ export async function getSubmissions(status?: string) {
     orderBy: desc(events.createdAt),
   });
 }
+
+/**
+ * Get published events happening this coming weekend (Saturday–Sunday).
+ */
+export async function getWeekendEvents(limit: number = 4) {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun, 6=Sat
+
+  // Calculate next Saturday 00:00
+  const daysUntilSat = dayOfWeek <= 5 ? 6 - dayOfWeek : dayOfWeek === 6 ? 0 : 6;
+  const saturday = new Date(now);
+  saturday.setDate(now.getDate() + daysUntilSat);
+  saturday.setHours(0, 0, 0, 0);
+
+  // Monday 00:00 after that weekend
+  const monday = new Date(saturday);
+  monday.setDate(saturday.getDate() + 2);
+
+  return db.query.events.findMany({
+    where: and(
+      eq(events.status, "published"),
+      gte(events.startDate, saturday),
+      lt(events.startDate, monday)
+    ),
+    with: {
+      venue: {
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          city: true,
+          state: true,
+        },
+      },
+      category: true,
+    },
+    orderBy: asc(events.startDate),
+    limit,
+  });
+}
+
+/**
+ * Get similar events (same category first, then fill from other categories).
+ */
+export async function getSimilarEvents(
+  currentEventId: string,
+  categoryId: string,
+  limit: number = 4
+) {
+  // First, fetch same-category events
+  const sameCategoryEvents = await db.query.events.findMany({
+    where: and(
+      eq(events.status, "published"),
+      eq(events.categoryId, categoryId),
+      ne(events.id, currentEventId),
+      gte(events.startDate, new Date())
+    ),
+    with: {
+      venue: {
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          city: true,
+          state: true,
+        },
+      },
+      category: true,
+    },
+    orderBy: asc(events.startDate),
+    limit,
+  });
+
+  if (sameCategoryEvents.length >= limit) {
+    return sameCategoryEvents;
+  }
+
+  // Fill remaining slots with other categories
+  const remaining = limit - sameCategoryEvents.length;
+  const existingIds = [currentEventId, ...sameCategoryEvents.map((e) => e.id)];
+
+  const otherEvents = await db.query.events.findMany({
+    where: and(
+      eq(events.status, "published"),
+      ne(events.categoryId, categoryId),
+      gte(events.startDate, new Date()),
+      ...existingIds.map((id) => ne(events.id, id))
+    ),
+    with: {
+      venue: {
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          city: true,
+          state: true,
+        },
+      },
+      category: true,
+    },
+    orderBy: asc(events.startDate),
+    limit: remaining,
+  });
+
+  return [...sameCategoryEvents, ...otherEvents];
+}
+
+/**
+ * Full-featured discovery search with filters and pagination.
+ */
+export interface DiscoveryFilters {
+  q?: string;
+  categorySlug?: string;
+  date?: string;
+  minPrice?: number; // dollars (will be converted to cents)
+  maxPrice?: number; // dollars (will be converted to cents)
+  sort?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function searchEventsForDiscovery(
+  filters: DiscoveryFilters
+): Promise<{ events: SearchDiscoveryRow[]; total: number }> {
+  const {
+    q,
+    categorySlug,
+    date,
+    minPrice,
+    maxPrice,
+    sort = "date",
+    limit = 12,
+    offset = 0,
+  } = filters;
+
+  const conditions: ReturnType<typeof eq>[] = [eq(events.status, "published")];
+
+  // Text search
+  if (q) {
+    conditions.push(
+      or(
+        ilike(events.title, `%${q}%`),
+        ilike(events.description, `%${q}%`)
+      )!
+    );
+  }
+
+  // Category filter
+  if (categorySlug) {
+    conditions.push(eq(categories.slug, categorySlug));
+  }
+
+  // Date filter
+  if (date) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayOfWeek = today.getDay();
+
+    switch (date) {
+      case "today": {
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        conditions.push(gte(events.startDate, today));
+        conditions.push(lt(events.startDate, tomorrow));
+        break;
+      }
+      case "tomorrow": {
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const dayAfter = new Date(today);
+        dayAfter.setDate(today.getDate() + 2);
+        conditions.push(gte(events.startDate, tomorrow));
+        conditions.push(lt(events.startDate, dayAfter));
+        break;
+      }
+      case "this-weekend": {
+        const daysUntilSat = dayOfWeek <= 5 ? 6 - dayOfWeek : dayOfWeek === 6 ? 0 : 6;
+        const saturday = new Date(today);
+        saturday.setDate(today.getDate() + daysUntilSat);
+        const monday = new Date(saturday);
+        monday.setDate(saturday.getDate() + 2);
+        conditions.push(gte(events.startDate, saturday));
+        conditions.push(lt(events.startDate, monday));
+        break;
+      }
+      case "this-week": {
+        const endOfWeek = new Date(today);
+        endOfWeek.setDate(today.getDate() + (7 - dayOfWeek));
+        conditions.push(gte(events.startDate, today));
+        conditions.push(lt(events.startDate, endOfWeek));
+        break;
+      }
+      case "this-month": {
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        conditions.push(gte(events.startDate, today));
+        conditions.push(lt(events.startDate, endOfMonth));
+        break;
+      }
+      default:
+        // Unknown date filter, just ensure upcoming
+        conditions.push(gte(events.startDate, today));
+    }
+  } else {
+    // Default: only upcoming events
+    conditions.push(gte(events.startDate, new Date()));
+  }
+
+  // Price filters (input in dollars, DB stores cents)
+  if (minPrice != null) {
+    const minCents = minPrice * 100;
+    conditions.push(
+      or(eq(events.isFree, true), gte(events.minPrice, minCents))!
+    );
+  }
+  if (maxPrice != null) {
+    const maxCents = maxPrice * 100;
+    conditions.push(
+      or(
+        eq(events.isFree, true),
+        sql`(${events.maxPrice} IS NOT NULL AND ${events.maxPrice} <= ${maxCents})
+            OR (${events.minPrice} IS NOT NULL AND ${events.minPrice} <= ${maxCents})`
+      )!
+    );
+  }
+
+  const whereClause = and(...conditions);
+
+  // Sort
+  const orderClause =
+    sort === "price"
+      ? asc(events.minPrice)
+      : asc(events.startDate);
+
+  // Count total
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(events)
+    .leftJoin(categories, eq(events.categoryId, categories.id))
+    .where(whereClause);
+
+  // Fetch results
+  const rows = await db
+    .select({
+      event: events,
+      venueName: venues.name,
+      venueSlug: venues.slug,
+      venueCity: venues.city,
+      venueState: venues.state,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+      categoryIcon: categories.icon,
+    })
+    .from(events)
+    .leftJoin(venues, eq(events.venueId, venues.id))
+    .leftJoin(categories, eq(events.categoryId, categories.id))
+    .where(whereClause)
+    .orderBy(orderClause)
+    .limit(limit)
+    .offset(offset);
+
+  return { events: rows, total };
+}
+
+export type SearchDiscoveryRow = Awaited<
+  ReturnType<typeof searchEvents>
+>[number];

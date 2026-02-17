@@ -720,9 +720,25 @@ export async function searchEventsForDiscovery(
         conditions.push(lt(events.startDate, endOfMonth));
         break;
       }
-      default:
-        // Unknown date filter, just ensure upcoming
-        conditions.push(gte(events.startDate, today));
+      default: {
+        // Handle specific YYYY-MM-DD date strings
+        const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateMatch) {
+          const specificDate = new Date(
+            Number(dateMatch[1]),
+            Number(dateMatch[2]) - 1,
+            Number(dateMatch[3])
+          );
+          const nextDay = new Date(specificDate);
+          nextDay.setDate(specificDate.getDate() + 1);
+          conditions.push(gte(events.startDate, specificDate));
+          conditions.push(lt(events.startDate, nextDay));
+        } else {
+          // Unknown date filter, just ensure upcoming
+          conditions.push(gte(events.startDate, today));
+        }
+        break;
+      }
     }
   } else {
     // Default: only upcoming events

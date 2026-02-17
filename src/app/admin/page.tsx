@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import {
   Card,
@@ -9,16 +11,24 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { StatsCards } from "@/components/admin/stats-cards";
 import { CalendarIcon, InboxIcon, ArrowRightIcon } from "lucide-react";
-
-// Placeholder stats — will be replaced with real data from queries later
-const placeholderStats = {
-  totalEvents: 42,
-  totalVenues: 15,
-  pendingSubmissions: 3,
-  ticketsSold: 1284,
-};
+import {
+  getEventCount,
+  getVenueCount,
+  getPendingSubmissionCount,
+  getTotalTicketsSold,
+} from "@/lib/db/queries/admin";
 
 export default async function AdminDashboardPage() {
+  const [totalEvents, totalVenues, pendingSubmissions, ticketsSold] =
+    await Promise.all([
+      getEventCount(),
+      getVenueCount(),
+      getPendingSubmissionCount(),
+      getTotalTicketsSold(),
+    ]);
+
+  const stats = { totalEvents, totalVenues, pendingSubmissions, ticketsSold };
+
   return (
     <div>
       <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
@@ -27,7 +37,7 @@ export default async function AdminDashboardPage() {
       </p>
 
       <div className="mt-8">
-        <StatsCards stats={placeholderStats} />
+        <StatsCards stats={stats} />
       </div>
 
       <Separator className="my-8" />

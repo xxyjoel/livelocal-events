@@ -1,9 +1,21 @@
 import Link from "next/link";
-import Image from "next/image";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EventCardImage } from "@/components/events/event-image";
 import { formatEventDate, formatPrice } from "@/lib/utils";
-import { MapPin, Clock } from "lucide-react";
+import {
+  MapPin,
+  Clock,
+  Music,
+  Mic2,
+  Theater,
+  Trophy,
+  Palette,
+  PartyPopper,
+  Users,
+  Moon,
+  Calendar,
+} from "lucide-react";
 
 export interface EventCardEvent {
   id: string;
@@ -44,6 +56,19 @@ function getPriceDisplay(event: EventCardEvent): string {
   return "See details";
 }
 
+const CATEGORY_PLACEHOLDERS: Record<string, { gradient: string; Icon: typeof Music }> = {
+  concerts:  { gradient: "from-violet-600/30 via-purple-500/20 to-fuchsia-500/30", Icon: Music },
+  comedy:    { gradient: "from-amber-500/30 via-yellow-400/20 to-orange-500/30", Icon: Mic2 },
+  theater:   { gradient: "from-rose-600/30 via-pink-500/20 to-red-500/30", Icon: Theater },
+  sports:    { gradient: "from-emerald-600/30 via-green-500/20 to-teal-500/30", Icon: Trophy },
+  arts:      { gradient: "from-cyan-600/30 via-sky-500/20 to-blue-500/30", Icon: Palette },
+  festivals: { gradient: "from-orange-500/30 via-red-400/20 to-pink-500/30", Icon: PartyPopper },
+  community: { gradient: "from-teal-600/30 via-emerald-500/20 to-green-500/30", Icon: Users },
+  nightlife: { gradient: "from-indigo-600/30 via-violet-500/20 to-purple-500/30", Icon: Moon },
+};
+
+const DEFAULT_PLACEHOLDER = { gradient: "from-slate-600/30 via-slate-500/20 to-slate-400/30", Icon: Calendar };
+
 function getSourceLabel(source: string): string {
   switch (source.toLowerCase()) {
     case "ticketmaster":
@@ -71,20 +96,23 @@ export function EventCard({ event }: EventCardProps) {
         {/* Image Section - 16:9 aspect ratio */}
         <div className="relative aspect-video overflow-hidden">
           {imageSrc ? (
-            <Image
+            <EventCardImage
               src={imageSrc}
               alt={event.title}
-              fill
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-              className="object-cover transition-transform duration-200 group-hover:scale-105"
+              categorySlug={event.category.slug}
+              categoryName={event.category.name}
             />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-secondary flex items-center justify-center">
-              <span className="text-4xl" role="img" aria-label={event.category.name}>
-                {event.category.icon || "🎶"}
-              </span>
-            </div>
-          )}
+          ) : (() => {
+            const { gradient, Icon } = CATEGORY_PLACEHOLDERS[event.category.slug] ?? DEFAULT_PLACEHOLDER;
+            return (
+              <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-2`}>
+                <Icon className="size-10 text-foreground/25" strokeWidth={1.5} aria-hidden="true" />
+                <span className="text-xs font-medium uppercase tracking-widest text-foreground/30">
+                  {event.category.name}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Category Badge */}
           <div className="absolute top-2 left-2">

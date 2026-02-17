@@ -6,3 +6,5 @@ export * from "./artists";
 export * from "./tickets";
 export * from "./facebook-pages";
 export * from "./sync-logs";
+export * from "./event-sources";
+export * from "./search-queries";

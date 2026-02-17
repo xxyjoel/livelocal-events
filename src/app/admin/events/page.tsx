@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -11,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getEventsWithRelations } from "@/lib/db/queries/events";
+import { getAdminEvents } from "@/lib/db/queries/admin";
 import {
   deleteEventAction,
   publishEventAction,
@@ -25,6 +26,9 @@ import {
   CalendarIcon,
   EyeIcon,
   EyeOffIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  SearchIcon,
 } from "lucide-react";
 
 const statusVariantMap: Record<
@@ -38,8 +42,31 @@ const statusVariantMap: Record<
   completed: "outline",
 };
 
-export default async function AdminEventsPage() {
-  const eventsWithRelations = await getEventsWithRelations();
+const STATUS_OPTIONS = ["all", "published", "draft", "cancelled", "soldout", "completed"];
+
+interface PageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+export default async function AdminEventsPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const q = typeof params.q === "string" ? params.q : undefined;
+  const status = typeof params.status === "string" ? params.status : undefined;
+  const page = typeof params.page === "string" ? Math.max(1, parseInt(params.page, 10) || 1) : 1;
+
+  const { events, total, totalPages } = await getAdminEvents({ q, status, page, limit: 50 });
+
+  // Build URL helper for filter links
+  function filterUrl(overrides: Record<string, string | undefined>) {
+    const p = new URLSearchParams();
+    const merged = { q, status, page: String(page), ...overrides };
+    for (const [k, v] of Object.entries(merged)) {
+      if (v && v !== "1" && k === "page") p.set(k, v);
+      else if (v && k !== "page") p.set(k, v);
+    }
+    const qs = p.toString();
+    return `/admin/events${qs ? `?${qs}` : ""}`;
+  }
 
   return (
     <div>
@@ -47,7 +74,7 @@ export default async function AdminEventsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Manage Events</h1>
           <p className="mt-2 text-muted-foreground">
-            Create, edit, and manage events on the platform.
+            {total} event{total !== 1 ? "s" : ""} total
           </p>
         </div>
         <Button asChild className="w-full sm:w-auto">
@@ -58,23 +85,57 @@ export default async function AdminEventsPage() {
         </Button>
       </div>
 
-      <div className="mt-8">
-        {eventsWithRelations.length === 0 ? (
+      {/* Search + Filters */}
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <form className="relative flex-1" action="/admin/events" method="GET">
+          {status && <input type="hidden" name="status" value={status} />}
+          <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            name="q"
+            placeholder="Search events..."
+            defaultValue={q}
+            className="pl-9"
+          />
+        </form>
+        <div className="flex gap-1.5 overflow-x-auto">
+          {STATUS_OPTIONS.map((s) => (
+            <Button
+              key={s}
+              asChild
+              variant={(status ?? "all") === s ? "default" : "outline"}
+              size="sm"
+            >
+              <Link href={filterUrl({ status: s === "all" ? undefined : s, page: undefined })}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </Link>
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        {events.length === 0 ? (
           <div className="rounded-xl border">
             <div className="flex h-64 flex-col items-center justify-center gap-4 text-muted-foreground">
               <CalendarIcon className="size-10 opacity-50" />
               <div className="text-center">
-                <p className="font-medium">No events yet</p>
+                <p className="font-medium">
+                  {q || status ? "No events match your filters" : "No events yet"}
+                </p>
                 <p className="mt-1 text-sm">
-                  Create your first event to get started.
+                  {q || status
+                    ? "Try adjusting your search or filters."
+                    : "Create your first event to get started."}
                 </p>
               </div>
-              <Button asChild size="sm">
-                <Link href="/admin/events/new">
-                  <PlusIcon className="size-4" />
-                  Create Event
-                </Link>
-              </Button>
+              {!q && !status && (
+                <Button asChild size="sm">
+                  <Link href="/admin/events/new">
+                    <PlusIcon className="size-4" />
+                    Create Event
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
         ) : (
@@ -86,17 +147,18 @@ export default async function AdminEventsPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Venue</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Source</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {eventsWithRelations.map((event) => (
+                {events.map((event) => (
                   <TableRow key={event.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="max-w-[250px] truncate font-medium">
                       {event.title}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {formatEventDate(event.startDate)}
                     </TableCell>
                     <TableCell>
@@ -104,6 +166,11 @@ export default async function AdminEventsPage() {
                     </TableCell>
                     <TableCell>
                       {event.category?.name ?? "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">
+                        {event.externalSource ?? "manual"}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -180,6 +247,47 @@ export default async function AdminEventsPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+              >
+                <Link
+                  href={filterUrl({ page: String(page - 1) })}
+                  aria-disabled={page <= 1}
+                  className={page <= 1 ? "pointer-events-none opacity-50" : ""}
+                >
+                  <ChevronLeftIcon className="size-4" />
+                  Previous
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+              >
+                <Link
+                  href={filterUrl({ page: String(page + 1) })}
+                  aria-disabled={page >= totalPages}
+                  className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
+                >
+                  Next
+                  <ChevronRightIcon className="size-4" />
+                </Link>
+              </Button>
+            </div>
           </div>
         )}
       </div>

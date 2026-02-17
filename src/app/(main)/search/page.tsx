@@ -1,12 +1,15 @@
 import { type Metadata } from "next";
+import Link from "next/link";
 import { createSearchParamsCache, parseAsString, parseAsInteger } from "nuqs/server";
 
+import { Button } from "@/components/ui/button";
 import { EventCard } from "@/components/events/event-card";
 import { SearchInput } from "@/components/events/search-input";
 import { EventFilters } from "@/components/events/event-filters";
 import { searchEventsForDiscovery } from "@/lib/db/queries/events";
 import { searchResultToEventCard } from "@/lib/db/mappers";
 import { SITE_NAME } from "@/lib/constants";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 // ---- SEO Metadata ----
 
@@ -130,14 +133,61 @@ export default async function SearchPage({
           </div>
         )}
 
-        {/* Pagination placeholder */}
-        {total > PAGE_SIZE && (
-          <div className="mt-8 flex items-center justify-center gap-2">
-            <p className="text-sm text-muted-foreground">
-              Page {page} of {Math.ceil(total / PAGE_SIZE)}
-            </p>
-          </div>
-        )}
+        {/* Pagination */}
+        {total > PAGE_SIZE && (() => {
+          const totalPages = Math.ceil(total / PAGE_SIZE);
+          // Build pagination URL preserving all current search params
+          function pageUrl(p: number) {
+            const sp = new URLSearchParams();
+            if (params.q) sp.set("q", params.q);
+            if (params.category) sp.set("category", params.category);
+            if (params.date) sp.set("date", params.date);
+            if (params.distance !== 25) sp.set("distance", String(params.distance));
+            if (params.minPrice) sp.set("minPrice", String(params.minPrice));
+            if (params.maxPrice) sp.set("maxPrice", String(params.maxPrice));
+            if (params.sort !== "date") sp.set("sort", params.sort);
+            if (p > 1) sp.set("page", String(p));
+            const qs = sp.toString();
+            return `/search${qs ? `?${qs}` : ""}`;
+          }
+          return (
+            <div className="mt-8 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                >
+                  <Link
+                    href={pageUrl(page - 1)}
+                    aria-disabled={page <= 1}
+                    className={page <= 1 ? "pointer-events-none opacity-50" : ""}
+                  >
+                    <ChevronLeftIcon className="size-4" />
+                    Previous
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                >
+                  <Link
+                    href={pageUrl(page + 1)}
+                    aria-disabled={page >= totalPages}
+                    className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
+                  >
+                    Next
+                    <ChevronRightIcon className="size-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
       </section>
     </div>
   );

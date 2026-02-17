@@ -1,13 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { useQueryState, parseAsString, parseAsInteger } from "nuqs";
-import { Filter, X } from "lucide-react";
+import { CalendarIcon, X } from "lucide-react";
+import { format } from "date-fns";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -26,6 +32,17 @@ const DATE_OPTIONS = [
   { label: "This Month", value: "this-month" },
 ] as const;
 
+/** Check if a date param is a specific YYYY-MM-DD date string */
+function isSpecificDate(value: string | null): boolean {
+  return value != null && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** Format a specific date for display */
+function formatSpecificDate(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  return format(new Date(year, month - 1, day), "MMM d, yyyy");
+}
+
 const SORT_OPTIONS = [
   { label: "Date", value: "date" },
   { label: "Distance", value: "distance" },
@@ -34,6 +51,7 @@ const SORT_OPTIONS = [
 
 export function EventFilters() {
   const nuqsOptions = { shallow: false } as const;
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [category, setCategory] = useQueryState(
     "category",
@@ -103,22 +121,74 @@ export function EventFilters() {
           <Label className="mb-1.5 block text-xs text-muted-foreground">
             When
           </Label>
-          <Select
-            value={date ?? "any"}
-            onValueChange={(v) => setDate(v === "any" ? null : v)}
-          >
-            <SelectTrigger className="w-full sm:w-[160px]">
-              <SelectValue placeholder="Any date" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any date</SelectItem>
-              {DATE_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
+          <div className="flex gap-2">
+            <Select
+              value={isSpecificDate(date) ? "pick-date" : (date ?? "any")}
+              onValueChange={(v) => {
+                if (v === "any") {
+                  setDate(null);
+                  setCalendarOpen(false);
+                } else if (v === "pick-date") {
+                  setCalendarOpen(true);
+                } else {
+                  setDate(v);
+                  setCalendarOpen(false);
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Any date">
+                  {isSpecificDate(date) ? formatSpecificDate(date!) : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any date</SelectItem>
+                {DATE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value="pick-date">
+                  <span className="flex items-center gap-1.5">
+                    <CalendarIcon className="size-3.5" />
+                    Pick a date
+                  </span>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
+
+            {/* Calendar popover for specific date */}
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={isSpecificDate(date) ? "border-primary text-primary" : ""}
+                  aria-label="Pick a specific date"
+                >
+                  <CalendarIcon className="size-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={isSpecificDate(date) ? new Date(date! + "T00:00:00") : undefined}
+                  onSelect={(day) => {
+                    if (day) {
+                      const yyyy = day.getFullYear();
+                      const mm = String(day.getMonth() + 1).padStart(2, "0");
+                      const dd = String(day.getDate()).padStart(2, "0");
+                      setDate(`${yyyy}-${mm}-${dd}`);
+                    } else {
+                      setDate(null);
+                    }
+                    setCalendarOpen(false);
+                  }}
+                  disabled={{ before: new Date() }}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         {/* Distance Filter */}

@@ -1,5 +1,4 @@
 import { type Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
@@ -19,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { EventCard } from "@/components/events/event-card";
+import { EventHeroImage } from "@/components/events/event-image";
 import { ShareButton } from "@/components/events/share-button";
 import { formatEventDate, formatPrice } from "@/lib/utils";
 import { getEventBySlug, getSimilarEvents } from "@/lib/db/queries/events";
@@ -221,27 +221,12 @@ export default async function EventDetailPage({
 
       {/* Hero Section */}
       <section className="relative h-64 w-full overflow-hidden sm:h-80 md:h-96">
-        {event.imageUrl ? (
-          <Image
-            src={event.imageUrl}
-            alt={event.title}
-            fill
-            priority
-            className="object-cover"
-            sizes="100vw"
-          />
-        ) : (
-          <div
-            className="absolute inset-0"
-            style={{
-              background: event.category.color
-                ? `linear-gradient(135deg, ${event.category.color}33 0%, ${event.category.color}11 50%, hsl(var(--secondary)) 100%)`
-                : undefined,
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-secondary" />
-          </div>
-        )}
+        <EventHeroImage
+          src={event.imageUrl}
+          alt={event.title}
+          categorySlug={event.category.slug}
+          categoryName={event.category.name}
+        />
         {/* Gradient overlay for text readability */}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
 

@@ -1,9 +1,33 @@
 import Link from "next/link";
-import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
+import { EventCarouselImage } from "@/components/events/event-image";
 import { formatEventDate } from "@/lib/utils";
-import { Calendar, MapPin } from "lucide-react";
+import {
+  Calendar,
+  MapPin,
+  Music,
+  Mic2,
+  Theater,
+  Trophy,
+  Palette,
+  PartyPopper,
+  Users,
+  Moon,
+} from "lucide-react";
 import { type EventCardEvent } from "./event-card";
+
+const CATEGORY_PLACEHOLDERS: Record<string, { gradient: string; Icon: typeof Music }> = {
+  concerts:  { gradient: "from-violet-600/40 via-purple-500/30 to-fuchsia-500/40", Icon: Music },
+  comedy:    { gradient: "from-amber-500/40 via-yellow-400/30 to-orange-500/40", Icon: Mic2 },
+  theater:   { gradient: "from-rose-600/40 via-pink-500/30 to-red-500/40", Icon: Theater },
+  sports:    { gradient: "from-emerald-600/40 via-green-500/30 to-teal-500/40", Icon: Trophy },
+  arts:      { gradient: "from-cyan-600/40 via-sky-500/30 to-blue-500/40", Icon: Palette },
+  festivals: { gradient: "from-orange-500/40 via-red-400/30 to-pink-500/40", Icon: PartyPopper },
+  community: { gradient: "from-teal-600/40 via-emerald-500/30 to-green-500/40", Icon: Users },
+  nightlife: { gradient: "from-indigo-600/40 via-violet-500/30 to-purple-500/40", Icon: Moon },
+};
+
+const DEFAULT_PLACEHOLDER = { gradient: "from-slate-600/40 via-slate-500/30 to-slate-400/40", Icon: Calendar };
 
 interface FeaturedCarouselProps {
   events: EventCardEvent[];
@@ -34,23 +58,23 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
             <div className="relative aspect-[16/7] sm:aspect-[16/8] overflow-hidden rounded-xl">
               {/* Background Image */}
               {imageSrc ? (
-                <Image
+                <EventCarouselImage
                   src={imageSrc}
                   alt={event.title}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
-                  priority
+                  categorySlug={event.category.slug}
+                  categoryName={event.category.name}
                 />
-              ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-primary/20 to-secondary">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-6xl" role="img" aria-label={event.category.name}>
-                      {event.category.icon || "🎶"}
+              ) : (() => {
+                const { gradient, Icon } = CATEGORY_PLACEHOLDERS[event.category.slug] ?? DEFAULT_PLACEHOLDER;
+                return (
+                  <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-3`}>
+                    <Icon className="size-14 text-foreground/20" strokeWidth={1.5} aria-hidden="true" />
+                    <span className="text-sm font-medium uppercase tracking-widest text-foreground/25">
+                      {event.category.name}
                     </span>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Gradient Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />

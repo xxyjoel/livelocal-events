@@ -51,6 +51,11 @@ export const venues = pgTable(
     googleRating: numeric("google_rating"),
     source: sourceEnum("source").default("manual").notNull(),
     isVerified: boolean("is_verified").default(false).notNull(),
+    lastScrapedAt: timestamp("last_scraped_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    lastScrapeError: text("last_scrape_error"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .notNull()
       .$defaultFn(() => new Date()),

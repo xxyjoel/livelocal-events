@@ -2,6 +2,7 @@ import { syncTicketmasterEvents } from "@/lib/sync/ticketmaster";
 import { syncSeatGeekEvents } from "@/lib/sync/seatgeek";
 import { syncFacebookGraphEvents } from "@/lib/sync/facebook-graph";
 import { syncFacebookScrapedEvents } from "@/lib/sync/facebook-scraper";
+import { syncVenueWebsiteEvents } from "@/lib/sync/venue-website-scraper";
 import { discoverVenues } from "@/lib/sync/google-places";
 import {
   toTicketmasterCities,
@@ -35,6 +36,12 @@ export interface EventSyncResult {
     eventsUpdated: number;
     venuesCreated: number;
     pagesProcessed: number;
+    errors: string[];
+  } | null;
+  venueWebsite: {
+    eventsCreated: number;
+    eventsUpdated: number;
+    venuesProcessed: number;
     errors: string[];
   } | null;
   totals: {
@@ -78,9 +85,11 @@ export async function runEventSync(): Promise<EventSyncResult> {
   }
   // Facebook scraper always runs — it scrapes public pages without an API key
   console.log("[EventSync] Facebook scraper will run for all active pages");
+  // Venue website scraper always runs — scrapes public venue websites
+  console.log("[EventSync] Venue website scraper will run for all venues with websites");
 
   // Run available syncs in parallel
-  const [ticketmasterResult, seatgeekResult, facebookResult] = await Promise.all([
+  const [ticketmasterResult, seatgeekResult, facebookResult, venueWebsiteResult] = await Promise.all([
     hasTicketmaster
       ? syncTicketmasterEvents({ cities: toTicketmasterCities() }).catch((error) => {
           console.error("[EventSync] Ticketmaster sync failed:", error);
@@ -134,6 +143,18 @@ export async function runEventSync(): Promise<EventSyncResult> {
         ],
       };
     }),
+    // Venue website scraper always runs
+    syncVenueWebsiteEvents().catch((error) => {
+      console.error("[EventSync] Venue website sync failed:", error);
+      return {
+        eventsCreated: 0,
+        eventsUpdated: 0,
+        venuesProcessed: 0,
+        errors: [
+          `Venue website sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        ],
+      };
+    }),
   ]);
 
   const eventsInvalidated =
@@ -144,11 +165,13 @@ export async function runEventSync(): Promise<EventSyncResult> {
     eventsCreated:
       (ticketmasterResult?.eventsCreated ?? 0) +
       (seatgeekResult?.eventsCreated ?? 0) +
-      (facebookResult?.eventsCreated ?? 0),
+      (facebookResult?.eventsCreated ?? 0) +
+      (venueWebsiteResult?.eventsCreated ?? 0),
     eventsUpdated:
       (ticketmasterResult?.eventsUpdated ?? 0) +
       (seatgeekResult?.eventsUpdated ?? 0) +
-      (facebookResult?.eventsUpdated ?? 0),
+      (facebookResult?.eventsUpdated ?? 0) +
+      (venueWebsiteResult?.eventsUpdated ?? 0),
     eventsInvalidated,
     venuesCreated:
       (ticketmasterResult?.venuesCreated ?? 0) +
@@ -158,6 +181,7 @@ export async function runEventSync(): Promise<EventSyncResult> {
       ...(ticketmasterResult?.errors ?? []),
       ...(seatgeekResult?.errors ?? []),
       ...(facebookResult?.errors ?? []),
+      ...(venueWebsiteResult?.errors ?? []),
       ...(eventsInvalidated > 0
         ? [`${eventsInvalidated} event(s) invalidated (marked as cancelled)`]
         : []),
@@ -210,6 +234,19 @@ export async function runEventSync(): Promise<EventSyncResult> {
       completedAt: new Date(),
     });
   }
+  if (venueWebsiteResult) {
+    logEntries.push({
+      source: "venue_website",
+      metro: "seattle",
+      status: venueWebsiteResult.errors.length > 0 ? "partial" : "success",
+      eventsCreated: venueWebsiteResult.eventsCreated,
+      eventsUpdated: venueWebsiteResult.eventsUpdated,
+      venuesCreated: 0,
+      errors: venueWebsiteResult.errors.length > 0 ? venueWebsiteResult.errors : null,
+      durationMs,
+      completedAt: new Date(),
+    });
+  }
 
   // Write all logs
   if (logEntries.length > 0) {
@@ -224,6 +261,7 @@ export async function runEventSync(): Promise<EventSyncResult> {
     ticketmaster: ticketmasterResult,
     seatgeek: seatgeekResult,
     facebook: facebookResult,
+    venueWebsite: venueWebsiteResult,
     totals,
     durationMs,
   };
